@@ -165,3 +165,69 @@ agent = Agent(
 5. **Read**: Next run reads prior reports in `_read_inheritance()`
 
 The exit report is the service's memory. Without it, every run starts from zero.
+
+## Usage Tracking Pattern
+
+Track token consumption and cost per agent execution using `track_usage()`:
+
+```python
+from agents import Runner, Usage
+
+async def run(self, request: ServiceRequest) -> ServiceResult:
+    start_time = datetime.now(timezone.utc)
+    total_usage = Usage()
+
+    # Run agents and accumulate usage
+    result = await Runner.run(research_agent, input=request.query)
+    total_usage = total_usage + result.raw_responses.usage
+
+    result = await Runner.run(writer_agent, input=result.final_output)
+    total_usage = total_usage + result.raw_responses.usage
+
+    # Include usage in exit report
+    self._write_exit_report(result, start_time, usage={
+        "input_tokens": total_usage.input_tokens,
+        "output_tokens": total_usage.output_tokens,
+        "total_cost": total_usage.total_cost,
+    })
+```
+
+Usage data flows into `covenant status` automatically via exit reports.
+
+## Memo Patterns
+
+Services coordinate through structured memos, not shared state:
+
+```python
+# Send a memo programmatically
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
+def send_memo(from_svc: str, to_svc: str, message: str):
+    memo = {
+        "from": from_svc,
+        "to": to_svc,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "message": message,
+        "read": False,
+    }
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    path = Path(f"memory/memos/{from_svc}-to-{to_svc}-{ts}.json")
+    path.write_text(json.dumps(memo, indent=2))
+```
+
+Or from the CLI:
+
+```bash
+# Send a memo between services
+covenant memo send research writer "API rate limit is 100/min, add backoff"
+
+# Read memos addressed to a service (marks them as read)
+covenant memo read writer
+
+# List all memos
+covenant memo list
+```
+
+Memos are pull-based -- the receiver reads when ready. They are not commands.

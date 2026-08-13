@@ -24,6 +24,15 @@ class ServiceResult(BaseModel):
     metadata: dict[str, str] = Field(default_factory=dict)
 
 
+# --- Usage tracking ---
+
+class UsageStats(BaseModel):
+    """Token usage statistics for a service run."""
+    input_tokens: int = Field(default=0, description="Total input tokens consumed")
+    output_tokens: int = Field(default=0, description="Total output tokens consumed")
+    total_cost: float = Field(default=0.0, description="Total cost in USD")
+
+
 # --- Exit report type ---
 
 class ExitReport(BaseModel):
@@ -38,3 +47,4 @@ class ExitReport(BaseModel):
     what_worked: list[str] = []
     what_failed: list[str] = []
     recommendations: list[str] = []
+    usage: UsageStats = Field(default_factory=UsageStats)

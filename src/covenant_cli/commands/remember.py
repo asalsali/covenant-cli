@@ -49,6 +49,97 @@ def _load_exit_reports(project_root: Path) -> list[dict]:
     return reports
 
 
+def _load_memos(project_root: Path) -> list[dict]:
+    """Load all memo JSON files from memory/memos/, sorted newest first."""
+    memos_dir = project_root / "memory" / "memos"
+    if not memos_dir.exists():
+        return []
+
+    memos = []
+    for memo_file in sorted(
+        memos_dir.glob("*.json"),
+        key=lambda f: f.stat().st_mtime,
+        reverse=True,
+    ):
+        try:
+            data = json.loads(memo_file.read_text(encoding="utf-8"))
+            data["_filename"] = memo_file.name
+            memos.append(data)
+        except (json.JSONDecodeError, OSError):
+            continue
+    return memos
+
+
+def _load_consolidated(project_root: Path) -> list[dict]:
+    """Load all consolidated summary files, sorted newest first."""
+    memory_dir = project_root / "memory"
+    if not memory_dir.exists():
+        return []
+
+    summaries = []
+    for cfile in sorted(
+        memory_dir.glob("consolidated-*.json"),
+        key=lambda f: f.stat().st_mtime,
+        reverse=True,
+    ):
+        try:
+            data = json.loads(cfile.read_text(encoding="utf-8"))
+            data["_filename"] = cfile.name
+            summaries.append(data)
+        except (json.JSONDecodeError, OSError):
+            continue
+    return summaries
+
+
+def _memo_matches_query(memo: dict, query: str) -> bool:
+    """Check if a memo matches the query (case-insensitive substring)."""
+    query_lower = query.lower()
+    for field in ("from", "to", "message"):
+        value = memo.get(field, "")
+        if isinstance(value, str) and query_lower in value.lower():
+            return True
+    return False
+
+
+def _consolidated_matches(summary: dict, query: str) -> list[dict]:
+    """Find matching entries inside a consolidated summary.
+
+    Returns a list of match dicts with service, text, and match_type.
+    """
+    query_lower = query.lower()
+    matches = []
+
+    for svc_name, svc_data in summary.get("services", {}).items():
+        if not isinstance(svc_data, dict):
+            continue
+
+        # Search recurring_failures
+        for failure in svc_data.get("recurring_failures", []):
+            text = failure if isinstance(failure, str) else str(failure)
+            if query_lower in text.lower():
+                count = ""
+                if isinstance(failure, dict):
+                    count = f", {failure.get('count', '?')} occurrences"
+                    text = failure.get("pattern", str(failure))
+                matches.append({
+                    "service": svc_name,
+                    "text": text,
+                    "match_type": f"recurring failure{count}",
+                })
+
+        # Search top_recommendations
+        for rec in svc_data.get("top_recommendations", []):
+            text = rec if isinstance(rec, str) else str(rec)
+            if query_lower in text.lower():
+                matches.append({
+                    "service": svc_name,
+                    "text": text,
+                    "match_type": "recommendation",
+                })
+
+    return matches
+
+
 def _matches_query(report: dict, query: str) -> bool:
     """Check if a report matches the query (case-insensitive substring)."""
     query_lower = query.lower()
@@ -158,16 +249,39 @@ def remember_command(query, failed, service, limit):
         raise SystemExit(1)
 
     reports = _load_exit_reports(project_root)
+    memos = _load_memos(project_root)
+    consolidated = _load_consolidated(project_root)
 
-    if not reports:
-        console.print(f"\n[{INK_LIGHT}]No exit reports found.[/]")
+    has_any_data = reports or memos or consolidated
+
+    if not has_any_data:
+        console.print(f"\n[{INK_LIGHT}]No exit reports, memos, or consolidated summaries found.[/]")
         console.print(
-            f"[{INK_LIGHT}]Run a service to generate one, "
+            f"[{INK_LIGHT}]Run a service to generate data, "
             f"or check memory/inheritance/.[/]"
         )
         return
 
-    # Apply filters
+    # --- Consolidated matches (compiled-truth boost -- displayed FIRST) ---
+    if query and consolidated:
+        all_consolidated_matches = []
+        for summary in consolidated:
+            matches = _consolidated_matches(summary, query)
+            all_consolidated_matches.extend(matches)
+
+        if all_consolidated_matches:
+            console.print()
+            console.print(
+                f"  [bold {GOLD}]Consolidated findings matching '{query}':[/]"
+            )
+            for m in all_consolidated_matches:
+                console.print(
+                    f"    [{GREEN}][compiled][/] [{GOLD}]{m['service']}:[/] "
+                    f"[{INK_LIGHT}]\"{m['text']}\" ({m['match_type']})[/]"
+                )
+            console.print()
+
+    # --- Exit reports ---
     filtered = reports
 
     if failed:
@@ -182,39 +296,70 @@ def remember_command(query, failed, service, limit):
     if query:
         filtered = [r for r in filtered if _matches_query(r, query)]
 
-    if not filtered:
+    if filtered:
+        total = len(filtered)
+        showing = filtered[:limit]
+
+        title = "Exit Reports"
         if query:
-            console.print(f"\n[{INK_LIGHT}]No reports match '{query}'.[/]")
-        else:
-            console.print(f"\n[{INK_LIGHT}]No reports match the given filters.[/]")
-        console.print(
-            f"[{INK_LIGHT}]Try a broader search or remove filters.[/]"
-        )
-        return
-
-    total = len(filtered)
-    showing = filtered[:limit]
-
-    # Display header
-    title = "Exit Reports"
-    if query:
-        title += f" matching '{query}'"
-    console.print()
-    console.print(branded_panel(
-        f"[{INK_LIGHT}]Showing {len(showing)} of {total} reports[/]",
-        title=title,
-    ))
-    console.print()
-
-    for report in showing:
-        _display_report(report)
+            title += f" matching '{query}'"
+        console.print()
+        console.print(branded_panel(
+            f"[{INK_LIGHT}]Showing {len(showing)} of {total} reports[/]",
+            title=title,
+        ))
         console.print()
 
-    if total > limit:
-        remaining = total - limit
+        for report in showing:
+            _display_report(report)
+            console.print()
+
+        if total > limit:
+            remaining = total - limit
+            console.print(
+                f"  [{INK_LIGHT}]... and {remaining} more. "
+                f"Use --service to narrow or --limit to show more.[/]"
+            )
+
+    # --- Memo matches ---
+    if query and memos:
+        matching_memos = [m for m in memos if _memo_matches_query(m, query)]
+        if matching_memos:
+            console.print()
+            console.print(
+                f"  [bold {GOLD}]Memos matching '{query}':[/]"
+            )
+            for m in matching_memos:
+                sender = m.get("from", "?")
+                recipient = m.get("to", "?")
+                timestamp = m.get("timestamp", "?")
+                message = m.get("message", "")
+                truncated = message[:80] + "..." if len(message) > 80 else message
+                console.print(
+                    f"    [{GOLD}]{sender}[/] [{INK_LIGHT}]->[/] "
+                    f"[{GOLD}]{recipient}[/]  [{INK_LIGHT}]{timestamp}[/]"
+                )
+                console.print(
+                    f"      [{INK_LIGHT}]\"{truncated}\"[/]"
+                )
+            console.print()
+
+    # Check if nothing matched at all
+    if query:
+        has_report_matches = bool(filtered)
+        has_memo_matches = bool(memos and [m for m in memos if _memo_matches_query(m, query)])
+        has_consolidated_matches = bool(consolidated and any(
+            _consolidated_matches(s, query) for s in consolidated
+        ))
+        if not has_report_matches and not has_memo_matches and not has_consolidated_matches:
+            console.print(f"\n[{INK_LIGHT}]No results match '{query}'.[/]")
+            console.print(
+                f"[{INK_LIGHT}]Try a broader search or remove filters.[/]"
+            )
+    elif not filtered and not query:
+        console.print(f"\n[{INK_LIGHT}]No reports match the given filters.[/]")
         console.print(
-            f"  [{INK_LIGHT}]... and {remaining} more. "
-            f"Use --service to narrow or --limit to show more.[/]"
+            f"[{INK_LIGHT}]Try a broader search or remove filters.[/]"
         )
 
     console.print()

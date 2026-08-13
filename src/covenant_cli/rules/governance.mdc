@@ -99,3 +99,17 @@ Every service run must leave something for the next run to build on.
 
 ## Rule 15: The Rules Serve the Work
 These rules make agents reliable. Follow them or change them -- never ignore them.
+
+## Rule 16: Track Usage
+Log token consumption and cost per service run. Call `track_usage()` after each agent execution.
+The exit report includes usage data automatically. Use `covenant status` to see totals.
+
+## Rule 17: Communicate Via Memos
+Services coordinate through structured memos, not shared state or raw context.
+- Send: `covenant memo send <from> <to> <message>`
+- Read: `covenant memo read <service>`
+Memos are pull-based -- the reader checks when ready.
+
+## Rule 18: Consolidate Regularly
+After 10+ service runs, run `covenant consolidate` to distill exit reports into summaries.
+Use `--archive` to move old reports. Memory grows in wisdom, not volume.

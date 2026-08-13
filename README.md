@@ -43,7 +43,9 @@ covenant status
 | `covenant init <name>` | Create a new governed project with GOVERNANCE.md, registry, memory, and convention rules |
 | `covenant add-service <name>` | Add a governed service with manager, agents, typed schemas, and exit reports |
 | `covenant status` | Show project health: services, recent exit reports, warnings |
-| `covenant remember [query]` | Search exit reports by keyword, with `--failed`, `--service`, `--limit` filters |
+| `covenant remember [query]` | Search exit reports, memos, and consolidated summaries by keyword |
+| `covenant memo send/list/read` | Cross-service communication via structured memos |
+| `covenant consolidate` | Distill exit reports into summaries, optionally archive |
 
 ## User Journeys
 
@@ -67,6 +69,8 @@ With covenant-cli, your agents:
 - Use Pydantic models for all I/O
 - Write exit reports on every run
 - Read inheritance before starting
+- Track token usage and cost per run
+- Coordinate through structured memos
 
 Same agent SDK. Same model. Different discipline.
 
@@ -74,7 +78,7 @@ Same agent SDK. Same model. Different discipline.
 
 ```
 my-project/
-├── GOVERNANCE.md              # 15 governance rules
+├── GOVERNANCE.md              # 18 governance rules
 ├── registry/agents.json       # Service and agent registry
 ├── memory/
 │   ├── inheritance/           # Exit reports from prior runs
@@ -89,11 +93,14 @@ my-project/
         └── tools.py           # Shared tools
 ```
 
-## What's New in v0.3.0
+## What's New in v0.4.0
 
-- **`covenant remember`** -- search exit reports by keyword, filter by status or service
-- **User Journeys** -- four guided paths from first install to team onboarding
-- **Richer status output** -- exit report details in the dashboard
+- **Usage tracking** -- token consumption and cost per service run, visible in `covenant status`
+- **`covenant memo`** -- cross-service communication via structured memos (send/list/read)
+- **`covenant consolidate`** -- distill exit reports into summaries with optional archiving
+- **`covenant remember`** -- now searches memos and consolidated summaries (compiled-truth boost)
+- **Status dashboard** -- unread memo count, last consolidation date, token totals per service
+- **3 new governance rules** -- track usage, communicate via memos, consolidate regularly
 
 ## Credits
 

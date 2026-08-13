@@ -18,6 +18,17 @@ from covenant_cli.theme import (
 )
 
 
+def _format_tokens(n: int) -> str:
+    """Format a token count for display (e.g. 1234 -> '1.2K', 1234567 -> '1.2M')."""
+    if n <= 0:
+        return "--"
+    if n < 1000:
+        return str(n)
+    if n < 1_000_000:
+        return f"{n / 1000:.1f}K"
+    return f"{n / 1_000_000:.1f}M"
+
+
 def _find_project_root() -> Path | None:
     """Walk up from cwd to find a directory with registry/agents.json."""
     current = Path.cwd()
@@ -120,11 +131,25 @@ def _service_stats(all_reports: list[dict], slug: str) -> dict:
             last_run = ts
             latest_recommendations = r.get("recommendations", [])
 
+    # Aggregate usage stats across all reports for this service
+    total_tokens = 0
+    total_cost = 0.0
+    has_usage = False
+    for r in svc_reports:
+        usage = r.get("usage")
+        if usage and isinstance(usage, dict):
+            has_usage = True
+            total_tokens += usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
+            total_cost += usage.get("total_cost", 0.0)
+
     return {
         "total": total,
         "completed": completed,
         "last_run": last_run,
         "recommendations": latest_recommendations,
+        "total_tokens": total_tokens,
+        "total_cost": total_cost,
+        "has_usage": has_usage,
     }
 
 
@@ -184,13 +209,52 @@ def status_command():
     governance_exists = (project_root / "GOVERNANCE.md").exists()
     governance_status = f"[{GREEN}]active[/]" if governance_exists else f"[{OXBLOOD}]missing[/]"
 
+    # Count unread memos
+    unread_memos = 0
+    memos_dir = project_root / "memory" / "memos"
+    if memos_dir.exists():
+        for memo_file in memos_dir.glob("*.json"):
+            try:
+                memo_data = json.loads(memo_file.read_text(encoding="utf-8"))
+                if not memo_data.get("read", False):
+                    unread_memos += 1
+            except (json.JSONDecodeError, OSError):
+                continue
+
+    # Find last consolidation date
+    last_consolidated = "never"
+    consolidated_files = sorted(
+        (project_root / "memory").glob("consolidated-*.json"),
+        key=lambda f: f.stat().st_mtime,
+        reverse=True,
+    )
+    if consolidated_files:
+        try:
+            cdata = json.loads(
+                consolidated_files[0].read_text(encoding="utf-8")
+            )
+            last_consolidated = cdata.get("consolidated_at", "unknown")[:10]
+        except (json.JSONDecodeError, OSError):
+            last_consolidated = consolidated_files[0].stem.replace("consolidated-", "")
+
+    header_lines = [
+        f"[bold {GOLD}]{project_name}[/]",
+        f"[{INK_LIGHT}]Governance:[/] {governance_status}",
+        f"[{INK_LIGHT}]Services:[/]   {len(registry.get('services', []))}",
+        f"[{INK_LIGHT}]Updated:[/]    {registry.get('lastUpdated', 'never')}",
+    ]
+    if unread_memos > 0:
+        header_lines.append(
+            f"[{INK_LIGHT}]Unread memos:[/] [{OXBLOOD}]{unread_memos}[/]"
+        )
+    header_lines.append(
+        f"[{INK_LIGHT}]Last consolidated:[/] {last_consolidated}"
+    )
+
     console.print()
     console.print(
         branded_panel(
-            f"[bold {GOLD}]{project_name}[/]\n"
-            f"[{INK_LIGHT}]Governance:[/] {governance_status}\n"
-            f"[{INK_LIGHT}]Services:[/]   {len(registry.get('services', []))}\n"
-            f"[{INK_LIGHT}]Updated:[/]    {registry.get('lastUpdated', 'never')}",
+            "\n".join(header_lines),
             title="Project Status",
         )
     )
@@ -208,6 +272,7 @@ def status_command():
                 ("Path", INK_LIGHT),
                 ("Status", "bold"),
                 ("Runs", INK_LIGHT),
+                ("Tokens", INK_LIGHT),
                 ("Last Run", INK_LIGHT),
             ],
         )
@@ -233,6 +298,12 @@ def status_command():
             )
             last_run_display = stats["last_run"] or "never"
 
+            tokens_display = (
+                _format_tokens(stats["total_tokens"])
+                if stats["has_usage"]
+                else "--"
+            )
+
             if stats["recommendations"]:
                 service_recommendations[svc.get("name", slug)] = stats["recommendations"]
 
@@ -241,6 +312,7 @@ def status_command():
                 svc.get("path", "?"),
                 status_display,
                 runs_display,
+                tokens_display,
                 last_run_display,
             )
 

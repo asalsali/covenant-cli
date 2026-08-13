@@ -7,6 +7,8 @@ from covenant_cli.commands.add_service import add_service_command
 from covenant_cli.commands.status import status_command
 from covenant_cli.commands.remember import remember_command
 from covenant_cli.commands.audit import audit_command
+from covenant_cli.commands.memo import memo_command
+from covenant_cli.commands.consolidate import consolidate_command
 
 
 @click.group()
@@ -28,6 +30,8 @@ cli.add_command(add_service_command, "add-service")
 cli.add_command(status_command, "status")
 cli.add_command(remember_command, "remember")
 cli.add_command(audit_command, "audit")
+cli.add_command(memo_command, "memo")
+cli.add_command(consolidate_command, "consolidate")
 
 
 if __name__ == "__main__":
