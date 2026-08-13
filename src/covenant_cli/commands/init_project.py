@@ -1,5 +1,6 @@
 """covenant init <name> -- create a governed project scaffold."""
 
+import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,6 +18,7 @@ from covenant_cli.theme import (
     file_added,
     print_error,
     GOLD,
+    GREEN,
     INK_LIGHT,
     OXBLOOD,
 )
@@ -90,6 +92,12 @@ def init_command(name: str):
     (src_dir / "main.py").write_text(main_content, encoding="utf-8")
     tree.add(file_added("src/main.py"))
 
+    # --- Compute GOVERNANCE.md hash ---
+    governance_path = project_dir / "GOVERNANCE.md"
+    governance_hash = hashlib.sha256(
+        governance_path.read_bytes()
+    ).hexdigest()
+
     # --- Registry ---
     registry_dir = project_dir / "registry"
     registry_dir.mkdir(parents=True, exist_ok=True)
@@ -97,6 +105,7 @@ def init_command(name: str):
         "agents": [],
         "services": [],
         "lastUpdated": None,
+        "governanceHash": governance_hash,
     }
     (registry_dir / "agents.json").write_text(
         json.dumps(registry_data, indent=2) + "\n", encoding="utf-8"
@@ -142,11 +151,35 @@ def init_command(name: str):
     services_dir.mkdir(parents=True, exist_ok=True)
     (services_dir / ".gitkeep").write_text("", encoding="utf-8")
 
+    # --- Post-init validation ---
+    expected_paths = [
+        project_dir / "GOVERNANCE.md",
+        project_dir / "pyproject.toml",
+        project_dir / "README.md",
+        project_dir / "src" / "__init__.py",
+        project_dir / "src" / "main.py",
+        project_dir / "registry" / "agents.json",
+        project_dir / "memory" / "inheritance" / "README.md",
+        project_dir / "memory" / "memos" / "README.md",
+        project_dir / "services" / ".gitkeep",
+    ]
+    missing_files = [p for p in expected_paths if not p.exists()]
+
     # --- Output ---
     print_banner()
     console.print()
     console.print(tree)
     console.print()
+
+    if missing_files:
+        for mf in missing_files:
+            rel = mf.relative_to(project_dir)
+            console.print(f"  [{OXBLOOD}]![/] [{INK_LIGHT}]Failed to create: {rel}[/]")
+        console.print()
+    else:
+        console.print(f"  [{GREEN}]All files created successfully.[/]")
+        console.print()
+
     console.print(
         branded_panel(
             f"[bold {GOLD}]Project created.[/]\n\n"
@@ -154,6 +187,7 @@ def init_command(name: str):
             f"  [{INK_LIGHT}]pip install -e .[/]\n"
             f"  [{INK_LIGHT}]covenant add-service my-first-agent[/]\n"
             f"  [{INK_LIGHT}]covenant status[/]\n\n"
+            f"  [{INK_LIGHT}]Optional: pip install openai-agents[/]\n\n"
             f"Read [bold]GOVERNANCE.md[/] [{INK_LIGHT}]-- it's the law.[/]",
             title="Next Steps",
         )

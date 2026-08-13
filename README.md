@@ -43,6 +43,16 @@ covenant status
 | `covenant init <name>` | Create a new governed project with GOVERNANCE.md, registry, memory, and convention rules |
 | `covenant add-service <name>` | Add a governed service with manager, agents, typed schemas, and exit reports |
 | `covenant status` | Show project health: services, recent exit reports, warnings |
+| `covenant remember [query]` | Search exit reports by keyword, with `--failed`, `--service`, `--limit` filters |
+
+## User Journeys
+
+Four documented paths through the tool:
+
+- [First-Time Setup](USER-JOURNEYS.md#journey-1-first-time-setup) -- scaffold a governed project from scratch
+- [Iterative Development](USER-JOURNEYS.md#journey-2-iterative-development) -- the learning loop across runs
+- [Debugging a Failing Agent](USER-JOURNEYS.md#journey-3-debugging-a-failing-agent) -- trace failures through exit reports
+- [Team Onboarding](USER-JOURNEYS.md#journey-4-team-onboarding) -- orient a new team member in minutes
 
 ## The Governance Delta
 
@@ -78,6 +88,12 @@ my-project/
         ├── schemas/types.py   # Pydantic models
         └── tools.py           # Shared tools
 ```
+
+## What's New in v0.3.0
+
+- **`covenant remember`** -- search exit reports by keyword, filter by status or service
+- **User Journeys** -- four guided paths from first install to team onboarding
+- **Richer status output** -- exit report details in the dashboard
 
 ## Credits
 

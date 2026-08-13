@@ -33,6 +33,30 @@ def _load_registry(project_root: Path) -> dict:
     return json.loads(registry_path.read_text(encoding="utf-8"))
 
 
+def _load_all_exit_reports(project_root: Path) -> list[dict]:
+    """Load all exit reports from memory/inheritance/, sorted newest first."""
+    inheritance_dir = project_root / "memory" / "inheritance"
+    if not inheritance_dir.exists():
+        return []
+
+    reports = []
+    json_files = sorted(
+        inheritance_dir.glob("*.json"),
+        key=lambda f: f.stat().st_mtime,
+        reverse=True,
+    )
+
+    for json_file in json_files:
+        try:
+            data = json.loads(json_file.read_text(encoding="utf-8"))
+            data["_filename"] = json_file.name
+            reports.append(data)
+        except (json.JSONDecodeError, KeyError):
+            continue
+
+    return reports
+
+
 def _find_exit_reports(project_root: Path, limit: int = 5) -> list[dict]:
     """Find recent exit reports from memory/inheritance/."""
     inheritance_dir = project_root / "memory" / "inheritance"
@@ -49,12 +73,21 @@ def _find_exit_reports(project_root: Path, limit: int = 5) -> list[dict]:
     for json_file in json_files[:limit]:
         try:
             data = json.loads(json_file.read_text(encoding="utf-8"))
+            # Capture what_failed for details column
+            what_failed = data.get("what_failed", [])
+            first_failure = ""
+            if what_failed and isinstance(what_failed, list) and what_failed:
+                first_failure = str(what_failed[0])[:60]
+            elif isinstance(what_failed, str) and what_failed:
+                first_failure = what_failed[:60]
+
             reports.append({
                 "file": json_file.name,
                 "service": data.get("service", "unknown"),
                 "status": data.get("status", "unknown"),
                 "timestamp": data.get("timestamp", "unknown"),
                 "duration": data.get("duration_seconds", "?"),
+                "details": first_failure,
             })
         except (json.JSONDecodeError, KeyError):
             reports.append({
@@ -63,9 +96,36 @@ def _find_exit_reports(project_root: Path, limit: int = 5) -> list[dict]:
                 "status": "error",
                 "timestamp": "?",
                 "duration": "?",
+                "details": "",
             })
 
     return reports
+
+
+def _service_stats(all_reports: list[dict], slug: str) -> dict:
+    """Compute run stats and latest info for a service from exit reports."""
+    svc_reports = [
+        r for r in all_reports
+        if slug in r.get("_filename", "") or slug == r.get("service", "")
+    ]
+    total = len(svc_reports)
+    completed = sum(1 for r in svc_reports if r.get("status") == "completed")
+
+    # Find most recent timestamp
+    last_run = None
+    latest_recommendations = []
+    for r in svc_reports:
+        ts = r.get("timestamp")
+        if ts and (last_run is None or ts > last_run):
+            last_run = ts
+            latest_recommendations = r.get("recommendations", [])
+
+    return {
+        "total": total,
+        "completed": completed,
+        "last_run": last_run,
+        "recommendations": latest_recommendations,
+    }
 
 
 def _check_warnings(project_root: Path, registry: dict) -> list[str]:
@@ -135,6 +195,9 @@ def status_command():
         )
     )
 
+    # --- Load all exit reports for stats ---
+    all_reports = _load_all_exit_reports(project_root)
+
     # --- Services table ---
     services = registry.get("services", [])
     if services:
@@ -144,11 +207,15 @@ def status_command():
                 ("Name", f"bold {GOLD}"),
                 ("Path", INK_LIGHT),
                 ("Status", "bold"),
+                ("Runs", INK_LIGHT),
                 ("Last Run", INK_LIGHT),
             ],
         )
 
+        service_recommendations = {}
+
         for svc in services:
+            slug = svc.get("slug", "")
             status_str = svc.get("status", "unknown")
             if status_str == "registered":
                 status_display = f"[{GOLD}]registered[/]"
@@ -157,15 +224,37 @@ def status_command():
             else:
                 status_display = f"[{INK_LIGHT}]{status_str}[/]"
 
+            # Derive stats from exit reports
+            stats = _service_stats(all_reports, slug)
+            runs_display = (
+                f"{stats['completed']}/{stats['total']}"
+                if stats["total"] > 0
+                else "0/0"
+            )
+            last_run_display = stats["last_run"] or "never"
+
+            if stats["recommendations"]:
+                service_recommendations[svc.get("name", slug)] = stats["recommendations"]
+
             table.add_row(
                 svc.get("name", "?"),
                 svc.get("path", "?"),
                 status_display,
-                svc.get("lastRun", "never") or "never",
+                runs_display,
+                last_run_display,
             )
 
         console.print()
         console.print(table)
+
+        # Surface recommendations from recent exit reports
+        if service_recommendations:
+            console.print()
+            for svc_name, recs in service_recommendations.items():
+                for rec in recs[:2]:
+                    console.print(
+                        f"  [{GOLD}]>[/] [{INK_LIGHT}]{svc_name}:[/] {rec}"
+                    )
 
     # --- Exit reports ---
     reports = _find_exit_reports(project_root)
@@ -177,6 +266,7 @@ def status_command():
                 ("Status", "bold"),
                 ("Duration", INK_LIGHT),
                 ("Timestamp", INK_LIGHT),
+                ("Details", INK_LIGHT),
             ],
         )
 
@@ -190,7 +280,10 @@ def status_command():
                 status_display = f"[{GOLD}]{status_str}[/]"
 
             duration = f"{r['duration']}s" if r["duration"] != "?" else "?"
-            report_table.add_row(r["service"], status_display, duration, r["timestamp"])
+            details = r.get("details", "")
+            report_table.add_row(
+                r["service"], status_display, duration, r["timestamp"], details
+            )
 
         console.print()
         console.print(report_table)
