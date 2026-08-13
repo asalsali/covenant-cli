@@ -7,13 +7,18 @@ from pathlib import Path
 
 import click
 from jinja2 import Environment, FileSystemLoader
-from rich.console import Console
-from rich.panel import Panel
-from rich.tree import Tree
 
 from covenant_cli.templates import get_service_template_dir
-
-console = Console()
+from covenant_cli.theme import (
+    console,
+    branded_panel,
+    branded_tree,
+    file_added,
+    print_error,
+    GOLD,
+    INK_LIGHT,
+    OXBLOOD,
+)
 
 
 def _normalize_name(name: str) -> str:
@@ -60,8 +65,8 @@ def add_service_command(name: str):
     """
     project_root = _find_project_root()
     if project_root is None:
-        console.print(
-            "[red]Not inside a covenant project.[/red] "
+        print_error(
+            "Not inside a covenant project. "
             "Run [bold]covenant init <name>[/bold] first."
         )
         raise SystemExit(1)
@@ -71,7 +76,7 @@ def add_service_command(name: str):
     service_dir = project_root / "services" / service_slug
 
     if service_dir.exists() and any(service_dir.iterdir()):
-        console.print(f"[red]Service '{service_slug}' already exists.[/red]")
+        print_error(f"Service '{service_slug}' already exists.")
         raise SystemExit(1)
 
     # Prepare context
@@ -90,7 +95,7 @@ def add_service_command(name: str):
     )
 
     # Build tree for display
-    tree = Tree(f"[bold blue]services/{service_slug}/[/bold blue]")
+    tree = branded_tree(f"services/{service_slug}/")
 
     # --- Service files ---
     service_dir.mkdir(parents=True, exist_ok=True)
@@ -98,17 +103,17 @@ def add_service_command(name: str):
     # __init__.py
     init_content = env.get_template("init.py.j2").render(**context)
     (service_dir / "__init__.py").write_text(init_content, encoding="utf-8")
-    tree.add(f"[green]+[/green] __init__.py")
+    tree.add(file_added("__init__.py"))
 
     # manager.py
     manager_content = env.get_template("manager.py.j2").render(**context)
     (service_dir / "manager.py").write_text(manager_content, encoding="utf-8")
-    tree.add(f"[green]+[/green] manager.py")
+    tree.add(file_added("manager.py"))
 
     # tools.py
     tools_content = env.get_template("tools.py.j2").render(**context)
     (service_dir / "tools.py").write_text(tools_content, encoding="utf-8")
-    tree.add(f"[green]+[/green] tools.py")
+    tree.add(file_added("tools.py"))
 
     # agents/
     agents_dir = service_dir / "agents"
@@ -116,11 +121,11 @@ def add_service_command(name: str):
     (agents_dir / "__init__.py").write_text(
         f'"""Agents for the {service_slug} service."""\n', encoding="utf-8"
     )
-    tree.add(f"[green]+[/green] agents/__init__.py")
+    tree.add(file_added("agents/__init__.py"))
 
     agent_content = env.get_template("example_agent.py.j2").render(**context)
     (agents_dir / "example_agent.py").write_text(agent_content, encoding="utf-8")
-    tree.add(f"[green]+[/green] agents/example_agent.py")
+    tree.add(file_added("agents/example_agent.py"))
 
     # schemas/
     schemas_dir = service_dir / "schemas"
@@ -128,11 +133,11 @@ def add_service_command(name: str):
     (schemas_dir / "__init__.py").write_text(
         f'"""Schemas for the {service_slug} service."""\n', encoding="utf-8"
     )
-    tree.add(f"[green]+[/green] schemas/__init__.py")
+    tree.add(file_added("schemas/__init__.py"))
 
     types_content = env.get_template("types.py.j2").render(**context)
     (schemas_dir / "types.py").write_text(types_content, encoding="utf-8")
-    tree.add(f"[green]+[/green] schemas/types.py")
+    tree.add(file_added("schemas/types.py"))
 
     # memory/
     memory_dir = service_dir / "memory"
@@ -143,7 +148,7 @@ def add_service_command(name: str):
         "The manager writes here after every run.\n",
         encoding="utf-8",
     )
-    tree.add(f"[green]+[/green] memory/README.md")
+    tree.add(file_added("memory/README.md"))
 
     # --- Update registry ---
     _update_registry(project_root, name, service_slug)
@@ -153,14 +158,13 @@ def add_service_command(name: str):
     console.print(tree)
     console.print()
     console.print(
-        Panel(
-            f"[bold green]Service '{service_slug}' created.[/bold green]\n\n"
-            f"  [dim]1. Edit services/{service_slug}/agents/example_agent.py[/dim]\n"
-            f"  [dim]2. Define your types in services/{service_slug}/schemas/types.py[/dim]\n"
-            f"  [dim]3. Wire agents in services/{service_slug}/manager.py[/dim]\n"
-            f"  [dim]4. Run: covenant status[/dim]\n\n"
-            "The manager writes exit reports automatically.",
+        branded_panel(
+            f"[bold {GOLD}]Service '{service_slug}' registered.[/]\n\n"
+            f"  [{INK_LIGHT}]1. Edit services/{service_slug}/agents/example_agent.py[/]\n"
+            f"  [{INK_LIGHT}]2. Define types in services/{service_slug}/schemas/types.py[/]\n"
+            f"  [{INK_LIGHT}]3. Wire agents in services/{service_slug}/manager.py[/]\n"
+            f"  [{INK_LIGHT}]4. Run: covenant status[/]\n\n"
+            f"[{INK_LIGHT}]The manager writes exit reports automatically.[/]",
             title="Next Steps",
-            expand=False,
         )
     )

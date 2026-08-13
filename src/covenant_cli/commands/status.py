@@ -5,11 +5,17 @@ from datetime import datetime
 from pathlib import Path
 
 import click
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
 
-console = Console()
+from covenant_cli.theme import (
+    console,
+    branded_panel,
+    branded_table,
+    print_error,
+    GOLD,
+    INK_LIGHT,
+    OXBLOOD,
+    GREEN,
+)
 
 
 def _find_project_root() -> Path | None:
@@ -105,8 +111,8 @@ def status_command():
     """Show project governance health."""
     project_root = _find_project_root()
     if project_root is None:
-        console.print(
-            "[red]Not inside a covenant project.[/red] "
+        print_error(
+            "Not inside a covenant project. "
             "Run [bold]covenant init <name>[/bold] first."
         )
         raise SystemExit(1)
@@ -116,37 +122,40 @@ def status_command():
     # --- Header ---
     project_name = project_root.name
     governance_exists = (project_root / "GOVERNANCE.md").exists()
-    governance_status = "[green]active[/green]" if governance_exists else "[red]missing[/red]"
+    governance_status = f"[{GREEN}]active[/]" if governance_exists else f"[{OXBLOOD}]missing[/]"
 
     console.print()
     console.print(
-        Panel(
-            f"[bold]{project_name}[/bold]\n"
-            f"Governance: {governance_status}\n"
-            f"Services: {len(registry.get('services', []))}\n"
-            f"Last updated: {registry.get('lastUpdated', 'never')}",
+        branded_panel(
+            f"[bold {GOLD}]{project_name}[/]\n"
+            f"[{INK_LIGHT}]Governance:[/] {governance_status}\n"
+            f"[{INK_LIGHT}]Services:[/]   {len(registry.get('services', []))}\n"
+            f"[{INK_LIGHT}]Updated:[/]    {registry.get('lastUpdated', 'never')}",
             title="Project Status",
-            expand=False,
         )
     )
 
     # --- Services table ---
     services = registry.get("services", [])
     if services:
-        table = Table(title="Services", show_lines=True)
-        table.add_column("Name", style="cyan")
-        table.add_column("Path", style="dim")
-        table.add_column("Status", style="bold")
-        table.add_column("Last Run", style="dim")
+        table = branded_table(
+            "Services",
+            columns=[
+                ("Name", f"bold {GOLD}"),
+                ("Path", INK_LIGHT),
+                ("Status", "bold"),
+                ("Last Run", INK_LIGHT),
+            ],
+        )
 
         for svc in services:
             status_str = svc.get("status", "unknown")
             if status_str == "registered":
-                status_display = "[yellow]registered[/yellow]"
+                status_display = f"[{GOLD}]registered[/]"
             elif status_str == "active":
-                status_display = "[green]active[/green]"
+                status_display = f"[{GREEN}]active[/]"
             else:
-                status_display = status_str
+                status_display = f"[{INK_LIGHT}]{status_str}[/]"
 
             table.add_row(
                 svc.get("name", "?"),
@@ -161,20 +170,24 @@ def status_command():
     # --- Exit reports ---
     reports = _find_exit_reports(project_root)
     if reports:
-        report_table = Table(title="Recent Exit Reports", show_lines=True)
-        report_table.add_column("Service", style="cyan")
-        report_table.add_column("Status", style="bold")
-        report_table.add_column("Duration", style="dim")
-        report_table.add_column("Timestamp", style="dim")
+        report_table = branded_table(
+            "Recent Exit Reports",
+            columns=[
+                ("Service", f"bold {GOLD}"),
+                ("Status", "bold"),
+                ("Duration", INK_LIGHT),
+                ("Timestamp", INK_LIGHT),
+            ],
+        )
 
         for r in reports:
             status_str = r["status"]
             if status_str == "completed":
-                status_display = "[green]completed[/green]"
+                status_display = f"[{GREEN}]completed[/]"
             elif status_str == "failed":
-                status_display = "[red]failed[/red]"
+                status_display = f"[{OXBLOOD}]failed[/]"
             else:
-                status_display = f"[yellow]{status_str}[/yellow]"
+                status_display = f"[{GOLD}]{status_str}[/]"
 
             duration = f"{r['duration']}s" if r["duration"] != "?" else "?"
             report_table.add_row(r["service"], status_display, duration, r["timestamp"])
@@ -182,13 +195,13 @@ def status_command():
         console.print()
         console.print(report_table)
     else:
-        console.print("\n[dim]No exit reports yet. Run a service to generate one.[/dim]")
+        console.print(f"\n[{INK_LIGHT}]No exit reports yet. Run a service to generate one.[/]")
 
     # --- Warnings ---
     warnings = _check_warnings(project_root, registry)
     if warnings:
         console.print()
         for w in warnings:
-            console.print(f"  [yellow]![/yellow] {w}")
+            console.print(f"  [{OXBLOOD}]![/] [{INK_LIGHT}]{w}[/]")
 
     console.print()

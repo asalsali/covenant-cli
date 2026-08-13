@@ -10,9 +10,10 @@ from covenant_cli.commands.status import status_command
 @click.group()
 @click.version_option(package_name="covenant-cli")
 def cli():
-    """Covenant CLI -- scaffold governed agent services.
+    """Covenant CLI -- governed agents, from the first line.
 
-    Exit reports, typed I/O, memory inheritance -- from the first line of code.
+    Scaffold projects with built-in governance, typed I/O,
+    exit reports, and memory inheritance.
     """
     pass
 

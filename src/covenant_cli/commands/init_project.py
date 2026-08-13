@@ -6,25 +6,20 @@ from pathlib import Path
 
 import click
 from jinja2 import Environment, FileSystemLoader
-from rich.console import Console
-from rich.panel import Panel
-from rich.tree import Tree
 
 from covenant_cli.templates import get_project_template_dir
 from covenant_cli.rules import get_rules_dir
-
-console = Console()
-
-
-BANNER = r"""
-   ___                                  _
-  / __\___  __   _____ _ __   __ _ _ __ | |_
- / /  / _ \ \ \ / / _ \ '_ \ / _` | '_ \| __|
-/ /__| (_) | \ V /  __/ | | | (_| | | | | |_
-\____/\___/   \_/ \___|_| |_|\__,_|_| |_|\__|
-
-  Governed agents. From the first line.
-"""
+from covenant_cli.theme import (
+    console,
+    print_banner,
+    branded_panel,
+    branded_tree,
+    file_added,
+    print_error,
+    GOLD,
+    INK_LIGHT,
+    OXBLOOD,
+)
 
 
 def _render_template(env: Environment, template_name: str, context: dict) -> str:
@@ -33,11 +28,12 @@ def _render_template(env: Environment, template_name: str, context: dict) -> str
     return template.render(**context)
 
 
-def _write_file(path: Path, content: str, tree: Tree) -> None:
+def _write_file(path: Path, content: str, tree) -> None:
     """Write a file and add it to the output tree."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
-    tree.add(f"[green]+[/green] {path.relative_to(path.parent.parent) if path.parent.parent.exists() else path.name}")
+    rel = path.relative_to(path.parent.parent) if path.parent.parent.exists() else path.name
+    tree.add(file_added(str(rel)))
 
 
 @click.command()
@@ -50,7 +46,7 @@ def init_command(name: str):
     project_dir = Path.cwd() / name
 
     if project_dir.exists() and any(project_dir.iterdir()):
-        console.print(f"[red]Directory '{name}' already exists and is not empty.[/red]")
+        print_error(f"Directory '{name}' already exists and is not empty.")
         raise SystemExit(1)
 
     project_dir.mkdir(parents=True, exist_ok=True)
@@ -70,7 +66,7 @@ def init_command(name: str):
     )
 
     # Build output tree for display
-    tree = Tree(f"[bold blue]{name}/[/bold blue]")
+    tree = branded_tree(f"{name}/")
 
     # --- Root files ---
     files = {
@@ -82,17 +78,17 @@ def init_command(name: str):
     for filename, content in files.items():
         filepath = project_dir / filename
         filepath.write_text(content, encoding="utf-8")
-        tree.add(f"[green]+[/green] {filename}")
+        tree.add(file_added(filename))
 
     # --- src/ ---
     src_dir = project_dir / "src"
     src_dir.mkdir(parents=True, exist_ok=True)
     (src_dir / "__init__.py").write_text('"""' + context["project_slug"] + ' -- governed agent project."""\n', encoding="utf-8")
-    tree.add(f"[green]+[/green] src/__init__.py")
+    tree.add(file_added("src/__init__.py"))
 
     main_content = _render_template(env, "main.py.j2", context)
     (src_dir / "main.py").write_text(main_content, encoding="utf-8")
-    tree.add(f"[green]+[/green] src/main.py")
+    tree.add(file_added("src/main.py"))
 
     # --- Registry ---
     registry_dir = project_dir / "registry"
@@ -105,7 +101,7 @@ def init_command(name: str):
     (registry_dir / "agents.json").write_text(
         json.dumps(registry_data, indent=2) + "\n", encoding="utf-8"
     )
-    tree.add(f"[green]+[/green] registry/agents.json")
+    tree.add(file_added("registry/agents.json"))
 
     # --- Memory ---
     inheritance_dir = project_dir / "memory" / "inheritance"
@@ -116,7 +112,7 @@ def init_command(name: str):
         "New agents read these before acting.\n",
         encoding="utf-8",
     )
-    tree.add(f"[green]+[/green] memory/inheritance/README.md")
+    tree.add(file_added("memory/inheritance/README.md"))
 
     memos_dir = project_dir / "memory" / "memos"
     memos_dir.mkdir(parents=True, exist_ok=True)
@@ -126,7 +122,7 @@ def init_command(name: str):
         "Memos are pull-based -- the reader checks when ready.\n",
         encoding="utf-8",
     )
-    tree.add(f"[green]+[/green] memory/memos/README.md")
+    tree.add(file_added("memory/memos/README.md"))
 
     # --- Convention rules (.cursor/rules and .claude/rules) ---
     rules_dir = get_rules_dir()
@@ -138,8 +134,8 @@ def init_command(name: str):
         ide_dir.mkdir(parents=True, exist_ok=True)
         (ide_dir / "governance.mdc").write_text(governance_mdc, encoding="utf-8")
         (ide_dir / "agent-patterns.mdc").write_text(agent_patterns_mdc, encoding="utf-8")
-        tree.add(f"[green]+[/green] {ide_dir_name}/governance.mdc")
-        tree.add(f"[green]+[/green] {ide_dir_name}/agent-patterns.mdc")
+        tree.add(file_added(f"{ide_dir_name}/governance.mdc"))
+        tree.add(file_added(f"{ide_dir_name}/agent-patterns.mdc"))
 
     # --- Services dir placeholder ---
     services_dir = project_dir / "services"
@@ -147,20 +143,18 @@ def init_command(name: str):
     (services_dir / ".gitkeep").write_text("", encoding="utf-8")
 
     # --- Output ---
-    console.print()
-    console.print(Panel(BANNER, style="bold cyan", expand=False))
+    print_banner()
     console.print()
     console.print(tree)
     console.print()
     console.print(
-        Panel(
-            "[bold green]Project created.[/bold green]\n\n"
-            f"  [dim]cd {name}[/dim]\n"
-            "  [dim]pip install -e .[/dim]\n"
-            "  [dim]covenant add-service my-first-agent[/dim]\n"
-            "  [dim]covenant status[/dim]\n\n"
-            "Read [bold]GOVERNANCE.md[/bold] -- it's the law.",
+        branded_panel(
+            f"[bold {GOLD}]Project created.[/]\n\n"
+            f"  [{INK_LIGHT}]cd {name}[/]\n"
+            f"  [{INK_LIGHT}]pip install -e .[/]\n"
+            f"  [{INK_LIGHT}]covenant add-service my-first-agent[/]\n"
+            f"  [{INK_LIGHT}]covenant status[/]\n\n"
+            f"Read [bold]GOVERNANCE.md[/] [{INK_LIGHT}]-- it's the law.[/]",
             title="Next Steps",
-            expand=False,
         )
     )
