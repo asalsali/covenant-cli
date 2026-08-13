@@ -1,0 +1,38 @@
+"""{{ project_name }} -- entry point."""
+
+import asyncio
+import json
+from pathlib import Path
+
+# To use a service, import its manager:
+# from services.my_service import ServiceManager
+
+
+def show_status():
+    """Print basic project status."""
+    registry_path = Path("registry/agents.json")
+    if not registry_path.exists():
+        print("No registry found. Run: covenant init")
+        return
+
+    registry = json.loads(registry_path.read_text())
+    services = registry.get("services", [])
+
+    print(f"{{ project_name }}")
+    print(f"Services registered: {len(services)}")
+    for svc in services:
+        print(f"  - {svc['name']} ({svc['status']})")
+
+
+async def main():
+    """Run your governed services here."""
+    show_status()
+
+    # Example: run a service
+    # manager = ServiceManager()
+    # result = await manager.run({"query": "your request here"})
+    # print(result)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

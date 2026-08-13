@@ -1,0 +1,167 @@
+---
+description: Structural patterns for governed agent services
+globs: ["services/**/*.py", "src/**/*.py"]
+alwaysApply: true
+---
+
+# Agent Patterns
+
+Structural patterns for building governed agent services. These are not rules -- they are proven patterns.
+
+## Service Directory Structure
+
+```
+services/<service_name>/
+├── __init__.py              # Exports the Manager class
+├── manager.py               # Orchestrator with exit report lifecycle
+├── tools.py                 # Shared tools for all agents in this service
+├── agents/
+│   ├── __init__.py
+│   ├── research_agent.py    # One agent per file
+│   └── writer_agent.py      # One agent per file
+├── schemas/
+│   ├── __init__.py
+│   └── types.py             # Pydantic models for all I/O
+└── memory/
+    └── README.md            # Service-specific exit reports
+```
+
+## Manager Pattern
+
+The manager is the service's orchestrator. It owns the full lifecycle.
+
+```python
+class MyServiceManager:
+    def __init__(self):
+        self.service_name = "my_service"
+        self.memory_dir = Path("memory/inheritance")
+
+    async def run(self, request: ServiceRequest) -> ServiceResult:
+        start_time = datetime.now(timezone.utc)
+        what_worked, what_failed = [], []
+
+        try:
+            # Phase 1: Read inheritance
+            inheritance = self._read_inheritance()
+
+            # Phase 2: Run agents sequentially
+            research = await Runner.run(research_agent, input=request.query)
+            what_worked.append("Research completed")
+
+            output = await Runner.run(writer_agent, input=research.final_output)
+            what_worked.append("Writing completed")
+
+            result = ServiceResult(status="completed", output=output.final_output)
+
+        except Exception as e:
+            result = ServiceResult(status="failed")
+            what_failed.append(str(e))
+
+        # Phase 4: Always write exit report
+        self._write_exit_report(result, start_time, what_worked, what_failed)
+        return result
+```
+
+## Agent File Structure
+
+Every agent file follows this layout:
+
+```python
+"""Service name -- agent purpose."""
+
+from pydantic import BaseModel
+
+from agents import Agent
+
+
+# 1. Input/Output models (Governance Rule 2)
+class AgentInput(BaseModel):
+    query: str
+    context: str = ""
+
+
+class AgentOutput(BaseModel):
+    result: str
+    confidence: float
+
+
+# 2. Instructions (Governance Rule 1)
+INSTRUCTIONS = """You are a focused agent with a clear mandate.
+
+Your job: [specific task]
+
+Rules:
+- Be specific
+- Include confidence scores
+- Say when uncertain
+"""
+
+
+# 3. Agent definition (Governance Rule 3)
+my_agent = Agent(
+    name="my_agent",
+    instructions=INSTRUCTIONS,
+    output_type=AgentOutput,
+)
+```
+
+## Pydantic Model Rules
+
+- Every field has a type annotation
+- Use `Field(...)` for required fields with descriptions
+- Use `Field(default=...)` for optional fields
+- No `Dict[str, Any]` -- define the shape explicitly
+- Nest models for complex structures
+
+```python
+class ResearchOutput(BaseModel):
+    summary: str = Field(..., description="One-paragraph summary")
+    findings: list[Finding] = Field(default_factory=list)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    sources: list[str] = Field(default_factory=list)
+```
+
+## Model Selection
+
+Choose the right model for the task:
+
+| Task | Model | Why |
+|------|-------|-----|
+| Simple extraction | gpt-4o-mini | Fast, cheap, sufficient |
+| Complex reasoning | gpt-4o | Better judgment |
+| Creative writing | gpt-4o | Nuance matters |
+| Data transformation | gpt-4o-mini | Structured, repeatable |
+
+Override per agent: `Agent(name="...", model="gpt-4o")`
+
+## Tools Pattern
+
+Define tools in `tools.py` and attach to agents:
+
+```python
+from agents import function_tool
+
+@function_tool
+def search_database(query: str) -> str:
+    """Search the project database for relevant records."""
+    # Implementation here
+    return results
+
+# Attach to agent:
+agent = Agent(
+    name="researcher",
+    instructions=INSTRUCTIONS,
+    tools=[search_database],
+    output_type=ResearchOutput,
+)
+```
+
+## Exit Report Lifecycle
+
+1. **Start**: Record `start_time` at the beginning of `run()`
+2. **Track**: Append to `what_worked` and `what_failed` during execution
+3. **Write**: Always write the exit report, even on failure
+4. **Location**: `memory/inheritance/<service>-<timestamp>.json`
+5. **Read**: Next run reads prior reports in `_read_inheritance()`
+
+The exit report is the service's memory. Without it, every run starts from zero.

@@ -1,0 +1,101 @@
+---
+description: Governance rules for governed agent projects
+globs: ["**/*.py", "**/*.json"]
+alwaysApply: true
+---
+
+# Governance Rules
+
+These rules govern every agent and service in this project. They are structural constraints, not suggestions.
+
+## Rule 1: Know Your Mandate
+Every agent and service must have a documented purpose before execution.
+- Service managers define their purpose in their docstring
+- Agents define their purpose in their INSTRUCTIONS constant
+- Never run an agent "to see what happens"
+
+## Rule 2: Typed I/O
+All agent inputs and outputs must use Pydantic models.
+```python
+# CORRECT
+class ResearchInput(BaseModel):
+    query: str
+    max_sources: int = 5
+
+# WRONG
+def run(input: dict):  # No untyped dicts
+    pass
+```
+
+## Rule 3: One Agent Per File
+Each agent lives in its own file with: instructions, I/O models, and the agent definition.
+- File: `services/<service>/agents/<agent_name>.py`
+- Contains: Input model, Output model, INSTRUCTIONS string, agent definition
+
+## Rule 4: Manager Orchestration
+Every service has a manager class that coordinates agents.
+```python
+class MyServiceManager:
+    async def run(self, request):
+        # Phase 1: Plan (read inheritance)
+        # Phase 2: Execute (run agents)
+        # Phase 3: Finalize (collect results)
+        # Phase 4: Report (write exit report)
+        self._write_exit_report(result, start_time)
+        return result
+```
+
+## Rule 5: Exit Reports Are Mandatory
+Every service run writes an exit report to `memory/inheritance/`.
+```python
+report = {
+    "service": self.service_name,
+    "timestamp": datetime.now(timezone.utc).isoformat(),
+    "duration_seconds": duration,
+    "status": "completed",
+    "what_worked": ["step 1 succeeded", "step 2 succeeded"],
+    "what_failed": [],
+    "recommendations": ["consider caching API responses"]
+}
+# Write to memory/inheritance/<service>-<timestamp>.json
+```
+
+## Rule 6: Distill, Don't Dump
+Never pass raw context between agents. Summarize to what the receiver needs.
+- Between agents: pass typed models, not raw strings
+- Between services: write structured memos, not context dumps
+- In exit reports: distill findings, don't paste logs
+
+## Rule 7: Check Inheritance First
+Before running agents, check `memory/inheritance/` for prior learnings.
+```python
+def _read_inheritance(self):
+    for path in self.memory_dir.glob(f"{self.service_name}-*.json"):
+        data = json.loads(path.read_text())
+        # Use prior learnings to improve this run
+```
+
+## Rule 8: Register Before Acting
+Every service must be in `registry/agents.json` before it runs.
+The `covenant add-service` command handles this automatically.
+
+## Rule 9: Resource Awareness
+Log token consumption. If a service exceeds expectations, pause and report.
+
+## Rule 10: Structured Communication
+Services coordinate through typed memos in `memory/memos/`, never raw context.
+
+## Rule 11: Error Transparency
+Log failure reasons explicitly. Never silently retry. Exit reports must document failures.
+
+## Rule 12: Memory Is Distilled
+Periodically summarize old exit reports. Memory grows in wisdom, not volume.
+
+## Rule 13: Two Small Agents Beat One Large One
+If a task is broad, split it into focused agents with clear mandates.
+
+## Rule 14: Handoff Is Not Optional
+Every service run must leave something for the next run to build on.
+
+## Rule 15: The Rules Serve the Work
+These rules make agents reliable. Follow them or change them -- never ignore them.

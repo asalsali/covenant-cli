@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "covenant-cli"
+version = "0.1.0"
+description = "Scaffold governed agent services with built-in governance, exit reports, and memory."
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Alex Salsali"},
+]
+keywords = ["agents", "governance", "cli", "scaffold", "openai", "pydantic"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Code Generators",
+]
+dependencies = [
+    "click>=8.0",
+    "rich>=13.0",
+    "jinja2>=3.0",
+]
+
+[project.scripts]
+covenant = "covenant_cli.cli:cli"
+
+[project.urls]
+Homepage = "https://github.com/asalsali/covenant-cli"
+Issues = "https://github.com/asalsali/covenant-cli/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/covenant_cli"]

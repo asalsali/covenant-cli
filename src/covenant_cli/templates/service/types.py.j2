@@ -1,0 +1,40 @@
+"""{{ service_name }} -- shared type definitions.
+
+Governance rule 2: All agent inputs and outputs use Pydantic models.
+No Dict[str, Any]. No untyped JSON. If it crosses a boundary, it has a schema.
+"""
+
+from datetime import datetime
+from pydantic import BaseModel, Field
+
+
+# --- Service-level types ---
+
+class ServiceRequest(BaseModel):
+    """Input to the {{ service_name }} service."""
+    query: str = Field(..., description="The primary request")
+    context: str = Field(default="", description="Additional context for agents")
+    options: dict[str, str] = Field(default_factory=dict, description="Optional configuration")
+
+
+class ServiceResult(BaseModel):
+    """Output from the {{ service_name }} service."""
+    status: str = Field(..., description="completed | failed | partial")
+    output: str = Field(default="", description="Primary output")
+    metadata: dict[str, str] = Field(default_factory=dict)
+
+
+# --- Exit report type ---
+
+class ExitReport(BaseModel):
+    """Structured exit report for memory/inheritance/.
+
+    Governance rule 5: Exit reports are mandatory.
+    """
+    service: str
+    timestamp: datetime
+    duration_seconds: float
+    status: str
+    what_worked: list[str] = []
+    what_failed: list[str] = []
+    recommendations: list[str] = []

@@ -1,0 +1,56 @@
+"""{{ service_name }} -- example agent.
+
+Governance rules:
+  - Rule 2: Typed I/O (Pydantic models for input/output)
+  - Rule 3: One agent per file
+  - Rule 6: Distill, don't dump (instructions are focused)
+"""
+
+from pydantic import BaseModel
+
+# Try importing from openai-agents SDK.
+# If not installed, this file serves as a structural template.
+try:
+    from agents import Agent
+except ImportError:
+    Agent = None
+
+
+# --- Typed I/O (Governance Rule 2) ---
+
+class ExampleInput(BaseModel):
+    """Input for the example agent."""
+    query: str
+    context: str = ""
+
+
+class ExampleOutput(BaseModel):
+    """Output from the example agent."""
+    result: str
+    confidence: float = 0.0
+    sources: list[str] = []
+
+
+# --- Agent Instructions ---
+
+INSTRUCTIONS = """You are an agent in the {{ service_name }} service.
+
+Your mandate: Process the user's query and return a structured result.
+
+Rules:
+- Be specific and concise
+- Include confidence scores
+- Cite sources when available
+- If uncertain, say so explicitly
+"""
+
+
+# --- Agent Definition ---
+
+if Agent is not None:
+    example_agent = Agent(
+        name="{{ service_slug }}_example",
+        instructions=INSTRUCTIONS,
+        output_type=ExampleOutput,
+        # model="gpt-4o-mini",  # Uncomment to override default model
+    )

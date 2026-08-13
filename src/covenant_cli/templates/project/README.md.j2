@@ -1,0 +1,42 @@
+# {{ project_name }}
+
+A governed agent project scaffolded with [covenant-cli](https://github.com/AlexSalsworthy/covenant-cli).
+
+## Setup
+
+```bash
+pip install -e .
+cp .env.example .env
+# Add your API keys to .env
+```
+
+## Running
+
+```python
+python src/main.py
+```
+
+## Project Structure
+
+```
+{{ project_name }}/
+├── GOVERNANCE.md              # 15 governance rules -- read this first
+├── registry/agents.json       # Service and agent registry
+├── memory/
+│   ├── inheritance/           # Exit reports from prior runs
+│   └── memos/                 # Cross-service communication
+├── services/                  # Governed services (add with: covenant add-service)
+└── src/main.py                # Entry point
+```
+
+## Adding Services
+
+```bash
+covenant add-service my-service
+```
+
+## Governance
+
+Read `GOVERNANCE.md` for the 15 rules that govern this project.
+Every service writes exit reports. Every agent has typed I/O.
+Memory is inherited, not lost.

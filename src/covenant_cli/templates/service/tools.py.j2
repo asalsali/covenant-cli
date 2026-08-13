@@ -1,0 +1,59 @@
+"""{{ service_name }} -- shared tools.
+
+Tools are functions that agents can call during execution.
+Define reusable tools here and attach them to agents via the
+`tools` parameter in their Agent definition.
+"""
+
+# Example tool using the openai-agents SDK function_tool decorator:
+#
+# from agents import function_tool
+#
+#
+# @function_tool
+# def search_memory(query: str) -> str:
+#     """Search memory/inheritance/ for prior learnings.
+#
+#     Governance rule 7: Check inheritance first.
+#     """
+#     from pathlib import Path
+#     import json
+#
+#     results = []
+#     inheritance_dir = Path("memory/inheritance")
+#     if inheritance_dir.exists():
+#         for path in inheritance_dir.glob("*.json"):
+#             try:
+#                 data = json.loads(path.read_text())
+#                 # Simple keyword search
+#                 text = json.dumps(data).lower()
+#                 if query.lower() in text:
+#                     results.append(f"{path.name}: {data.get('status', 'unknown')}")
+#             except (json.JSONDecodeError, OSError):
+#                 continue
+#     return "\n".join(results) if results else "No matching exit reports found."
+#
+#
+# @function_tool
+# def write_memo(recipient: str, content: str) -> str:
+#     """Write a structured memo to memory/memos/.
+#
+#     Governance rule 10: Structured communication.
+#     """
+#     from pathlib import Path
+#     from datetime import datetime, timezone
+#     import json
+#
+#     memos_dir = Path("memory/memos")
+#     memos_dir.mkdir(parents=True, exist_ok=True)
+#
+#     memo = {
+#         "from": "{{ service_slug }}",
+#         "to": recipient,
+#         "content": content,
+#         "timestamp": datetime.now(timezone.utc).isoformat(),
+#     }
+#
+#     filename = f"{{ service_slug }}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}.json"
+#     (memos_dir / filename).write_text(json.dumps(memo, indent=2))
+#     return f"Memo written: {filename}"
