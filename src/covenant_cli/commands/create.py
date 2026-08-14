@@ -106,7 +106,12 @@ def _update_registry_bulk(
     registry_path.write_text(json.dumps(registry, indent=2) + "\n", encoding="utf-8")
 
 
-def _create_services(project_dir: Path, plan: dict, tree) -> None:
+def _create_services(
+    project_dir: Path,
+    plan: dict,
+    tree,
+    tool_implementations: dict[str, str] | None = None,
+) -> None:
     """Generate all service directories and files from the LLM plan."""
     from covenant_cli.generators import (
         generate_schemas_file,
@@ -116,6 +121,9 @@ def _create_services(project_dir: Path, plan: dict, tree) -> None:
         generate_service_init,
         generate_agents_init,
         generate_schemas_init,
+        generate_setup_script,
+        generate_pipeline_runner,
+        extract_required_packages,
         _normalize_name as gen_normalize,
     )
 
@@ -162,7 +170,7 @@ def _create_services(project_dir: Path, plan: dict, tree) -> None:
             tree.add(file_added(f"services/{slug}/agents/{agent['name']}.py"))
 
         # tools.py
-        content = generate_tools_file(svc)
+        content = generate_tools_file(svc, implementations=tool_implementations)
         (svc_dir / "tools.py").write_text(content, encoding="utf-8")
         tree.add(file_added(f"services/{slug}/tools.py"))
 
@@ -183,6 +191,22 @@ def _create_services(project_dir: Path, plan: dict, tree) -> None:
             encoding="utf-8",
         )
         tree.add(file_added(f"services/{slug}/memory/README.md"))
+
+    # Generate setup.sh
+    setup_content = generate_setup_script(plan["project_name"], plan.get("sdk", "openai"))
+    setup_path = project_dir / "setup.sh"
+    setup_path.write_text(setup_content, encoding="utf-8")
+    try:
+        setup_path.chmod(0o755)
+    except OSError:
+        pass  # chmod may not work on Windows
+    tree.add(file_added("setup.sh"))
+
+    # Generate pipeline runner
+    runner_content = generate_pipeline_runner(plan)
+    runner_path = project_dir / "run_pipeline.py"
+    runner_path.write_text(runner_content, encoding="utf-8")
+    tree.add(file_added("run_pipeline.py"))
 
 
 @click.command()
@@ -267,6 +291,40 @@ def create_command(description: str, sdk: str, template_name: str):
         )
         raise SystemExit(0)
 
+    # 5b. Generate tool implementations via LLM
+    tool_implementations: dict[str, str] = {}
+    all_tools: list[dict] = []
+    for service in plan["services"]:
+        for tool in service.get("tools", []):
+            tool_copy = dict(tool)
+            tool_copy["_service"] = service["name"]
+            all_tools.append(tool_copy)
+
+    if all_tools:
+        try:
+            with console.status(
+                f"[{GOLD}]Generating tool implementations...[/]",
+                spinner="dots",
+            ):
+                from covenant_cli.llm import generate_tool_implementations
+                tool_implementations = generate_tool_implementations(all_tools)
+            if tool_implementations:
+                generated_count = len(tool_implementations)
+                total_count = len(all_tools)
+                console.print(
+                    f"  [{GREEN}]Generated {generated_count}/{total_count} "
+                    f"tool implementations.[/]"
+                )
+                stub_count = total_count - generated_count
+                if stub_count > 0:
+                    console.print(
+                        f"  [{INK_LIGHT}]{stub_count} tools fell back to stubs.[/]"
+                    )
+                console.print()
+        except Exception:
+            # Never crash on tool generation failure -- fall back to stubs
+            tool_implementations = {}
+
     # 6. Create project
     project_name = plan["project_name"]
     project_dir = Path.cwd() / project_name
@@ -300,7 +358,25 @@ def create_command(description: str, sdk: str, template_name: str):
         missing = _init_api(project_dir, context, tree, sdk)
 
     # 8. Generate services from plan
-    _create_services(project_dir, plan, tree)
+    _create_services(project_dir, plan, tree, tool_implementations=tool_implementations)
+
+    # 8b. Append extra packages from generated tools to requirements.txt
+    if tool_implementations:
+        from covenant_cli.generators import extract_required_packages
+        extra_packages = extract_required_packages(tool_implementations)
+        if extra_packages:
+            req_path = project_dir / "requirements.txt"
+            if req_path.exists():
+                existing = req_path.read_text(encoding="utf-8")
+                additions = []
+                for pkg in extra_packages:
+                    if pkg not in existing:
+                        additions.append(pkg)
+                if additions:
+                    with open(req_path, "a", encoding="utf-8") as f:
+                        f.write("\n# Auto-detected from generated tool implementations\n")
+                        for pkg in additions:
+                            f.write(f"{pkg}\n")
 
     # 9. Update registry with all services
     _update_registry_bulk(project_dir, plan["services"], sdk=sdk)
@@ -324,16 +400,21 @@ def create_command(description: str, sdk: str, template_name: str):
             f"[bold {GOLD}]Project '{project_name}' created with "
             f"{svc_count} services and {agent_count} agents.[/]\n\n"
             f"  [{INK_LIGHT}]cd {project_name}[/]\n"
-            f"  [{INK_LIGHT}]pip install -r requirements.txt[/]\n"
+            f"  [{INK_LIGHT}]bash setup.sh[/]   [{INK_LIGHT}](or run the steps manually)[/]\n"
             + (
-                f"  [{INK_LIGHT}]python manage.py migrate[/]\n"
                 f"  [{INK_LIGHT}]python manage.py runserver[/]\n"
                 if template_name == "webapp"
                 else f"  [{INK_LIGHT}]uvicorn main:app --reload[/]\n"
             )
             + f"\n"
-            f"  [{INK_LIGHT}]Each service has TODO stubs in tools.py -- implement them.[/]\n"
-            f"  [{INK_LIGHT}]Agent instructions and types are ready to use.[/]\n\n"
+            f"  [{INK_LIGHT}]python run_pipeline.py \"your input\"[/]   [{INK_LIGHT}](test the pipeline directly)[/]\n"
+            f"\n"
+            + (
+                f"  [{INK_LIGHT}]Tool implementations were generated -- review them in tools.py.[/]\n"
+                if tool_implementations
+                else f"  [{INK_LIGHT}]Each service has TODO stubs in tools.py -- implement them.[/]\n"
+            )
+            + f"  [{INK_LIGHT}]Agent instructions and types are ready to use.[/]\n\n"
             f"Read [bold]GOVERNANCE.md[/] [{INK_LIGHT}]-- it's the law.[/]",
             title="Next Steps",
         )

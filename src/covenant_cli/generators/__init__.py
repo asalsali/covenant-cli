@@ -212,8 +212,15 @@ def generate_agent_file(agent_spec: dict, service_spec: dict) -> str:
     return "\n".join(lines)
 
 
-def generate_tools_file(service_spec: dict) -> str:
-    """Generate tool function stubs for a service."""
+def generate_tools_file(
+    service_spec: dict,
+    implementations: dict[str, str] | None = None,
+) -> str:
+    """Generate tool functions for a service.
+
+    When ``implementations`` is provided and contains a key matching a tool
+    name, the LLM-generated implementation is used instead of a stub.
+    """
     tools = service_spec.get("tools", [])
 
     lines = [
@@ -234,28 +241,86 @@ def generate_tools_file(service_spec: dict) -> str:
     ])
 
     for tool in tools:
-        # Normalize parameter types
-        normalized_params = []
-        for param in tool["params"]:
-            if ": " in param:
-                pname, ptype = param.split(": ", 1)
-                ptype = _normalize_tool_param_type(ptype)
-                normalized_params.append(f"{pname}: {ptype}")
+        tool_name = tool["name"]
+
+        # Check if we have a generated implementation for this tool
+        if implementations and tool_name in implementations:
+            impl_code = implementations[tool_name]
+            lines.append("# GENERATED -- review before production")
+            lines.append("@function_tool")
+            # The implementation already contains the full function def
+            # with imports prepended. We need to extract imports and the
+            # function body separately.
+            impl_lines = impl_code.split("\n")
+            import_lines = []
+            func_lines = []
+            in_func = False
+            for line in impl_lines:
+                if line.startswith("def "):
+                    in_func = True
+                if in_func:
+                    func_lines.append(line)
+                elif line.strip() and not line.strip().startswith("#"):
+                    # Import line -- only add if not already present
+                    if line.strip().startswith(("import ", "from ")):
+                        import_lines.append(line)
+                elif line.strip().startswith("# requires:"):
+                    # Keep requires comments
+                    import_lines.append(line)
+
+            # Insert imports near the top (after the module-level imports)
+            # We insert them just before the function_tool import
+            if import_lines:
+                # Add imports after the existing "from agents ..." line
+                for imp in import_lines:
+                    if imp not in lines:
+                        lines.insert(lines.index("from agents import function_tool") + 1, imp)
+
+            if func_lines:
+                lines.extend(func_lines)
             else:
-                normalized_params.append(param)
-        param_str = ", ".join(normalized_params)
-        desc = tool["description"].replace('"', '\\"')
-        lines.extend([
-            "@function_tool",
-            f"def {tool['name']}({param_str}) -> str:",
-            f'    """{desc}"""',
-            f"    # TODO: Implement {tool['name']}",
-            f'    raise NotImplementedError("{tool["name"]} is not yet implemented")',
-            "",
-            "",
-        ])
+                # Fallback: dump the whole implementation after decorator
+                lines.extend(impl_lines)
+            lines.extend(["", ""])
+        else:
+            # Stub fallback
+            normalized_params = []
+            for param in tool["params"]:
+                if ": " in param:
+                    pname, ptype = param.split(": ", 1)
+                    ptype = _normalize_tool_param_type(ptype)
+                    normalized_params.append(f"{pname}: {ptype}")
+                else:
+                    normalized_params.append(param)
+            param_str = ", ".join(normalized_params)
+            desc = tool["description"].replace('"', '\\"')
+            lines.extend([
+                "@function_tool",
+                f"def {tool_name}({param_str}) -> str:",
+                f'    """{desc}"""',
+                f"    # TODO: Implement {tool_name}",
+                f'    raise NotImplementedError("{tool_name} is not yet implemented")',
+                "",
+                "",
+            ])
 
     return "\n".join(lines)
+
+
+def extract_required_packages(implementations: dict[str, str]) -> list[str]:
+    """Extract ``# requires: <package>`` comments from generated code.
+
+    Returns a deduplicated list of package names.
+    """
+    packages: list[str] = []
+    for code in implementations.values():
+        for line in code.split("\n"):
+            stripped = line.strip()
+            if stripped.startswith("# requires:"):
+                pkg = stripped.split("# requires:", 1)[1].strip()
+                if pkg and pkg not in packages:
+                    packages.append(pkg)
+    return packages
 
 
 def generate_manager_file(service_spec: dict, pipeline_step: dict) -> str:
@@ -398,3 +463,155 @@ def generate_schemas_init(service_spec: dict) -> str:
     """Generate the schemas/ __init__.py."""
     slug = _normalize_name(service_spec["name"])
     return f'"""Schemas for the {slug} service."""\n'
+
+
+def generate_setup_script(project_name: str, sdk: str) -> str:
+    """Generate setup.sh for automated project setup."""
+    return f'''#!/usr/bin/env bash
+set -e
+
+echo "Setting up {project_name}..."
+
+# Create virtual environment if not in one
+if [ -z "$VIRTUAL_ENV" ]; then
+    echo "Creating virtual environment..."
+    python3 -m venv .venv
+    # Activate -- works on Linux/Mac and Git Bash on Windows
+    if [ -f .venv/bin/activate ]; then
+        source .venv/bin/activate
+    elif [ -f .venv/Scripts/activate ]; then
+        source .venv/Scripts/activate
+    fi
+    echo "Virtual environment created and activated."
+fi
+
+# Install dependencies
+echo "Installing dependencies..."
+pip install -r requirements.txt
+
+# Check for API key
+if [ -z "$OPENAI_API_KEY" ]; then
+    echo ""
+    echo "WARNING: OPENAI_API_KEY is not set."
+    echo "Copy .env.example to .env and add your key:"
+    echo "  cp .env.example .env"
+    echo ""
+fi
+
+# Run Django setup
+echo "Running database migrations..."
+python manage.py migrate
+
+echo ""
+echo "Setup complete! To start the app:"
+echo "  python manage.py runserver"
+echo ""
+echo "Then visit http://127.0.0.1:8000/"
+'''
+
+
+def generate_pipeline_runner(plan: dict) -> str:
+    """Generate run_pipeline.py that executes the full service pipeline."""
+    project_name = plan["project_name"]
+    services = plan["services"]
+    pipeline = plan.get("pipeline", [])
+
+    # Build pipeline order: list of (slug, class_name) tuples
+    pipeline_steps = []
+    for step in pipeline:
+        slug = _normalize_name(step["service"])
+        class_name = _to_class_name(slug)
+        pipeline_steps.append((slug, class_name, step.get("input", "")))
+
+    # If no pipeline defined, fall back to service order
+    if not pipeline_steps:
+        for svc in services:
+            slug = _normalize_name(svc["name"])
+            class_name = _to_class_name(slug)
+            pipeline_steps.append((slug, class_name, ""))
+
+    total = len(pipeline_steps)
+    pipeline_arrow = " -> ".join(s[0] for s in pipeline_steps)
+
+    # Build import lines
+    import_lines = []
+    for slug, class_name, _ in pipeline_steps:
+        import_lines.append(
+            f"from services.{slug}.manager import {class_name}Manager"
+        )
+    imports_str = "\n".join(import_lines)
+
+    # Build run steps
+    step_blocks = []
+    for i, (slug, class_name, input_desc) in enumerate(pipeline_steps, 1):
+        var_name = f"result{i}"
+        prev_var = f"result{i - 1}" if i > 1 else None
+
+        if i == 1:
+            input_expr = '{"query": user_input}'
+        else:
+            input_expr = prev_var
+
+        block = (
+            f'    # Step {i}: {slug}\n'
+            f'    print("  [{i}/{total}] Running {slug}...")\n'
+            f'    manager{i} = {class_name}Manager()\n'
+            f'    {var_name} = await manager{i}.run({input_expr})\n'
+            f'    print(f"       Status: {{{var_name}.get(\'status\', \'unknown\')}}")\n'
+        )
+        step_blocks.append(block)
+
+    steps_str = "\n".join(step_blocks)
+    final_var = f"result{total}"
+
+    return f'''#!/usr/bin/env python3
+"""Run the {project_name} agent pipeline end-to-end.
+
+Usage:
+    python run_pipeline.py "your input text here"
+    python run_pipeline.py --dry-run  (show pipeline without running)
+"""
+
+import asyncio
+import json
+import sys
+from pathlib import Path
+
+from dotenv import load_dotenv
+load_dotenv()
+
+{imports_str}
+
+
+async def run_pipeline(user_input: str) -> dict:
+    """Execute the full pipeline sequentially."""
+    print(f"\\n  Pipeline: {pipeline_arrow}")
+    print(f"  Input: {{user_input[:80]}}...")
+    print()
+
+{steps_str}
+    print("\\n  Pipeline complete.")
+    print("  Exit reports written to memory/inheritance/")
+    return {final_var}
+
+
+def main():
+    if "--dry-run" in sys.argv:
+        print("\\n  DRY RUN -- Pipeline structure:")
+        print("  {pipeline_arrow}")
+        print("  No agents executed.")
+        return
+
+    if len(sys.argv) < 2:
+        print("Usage: python run_pipeline.py \\"your input text\\"")
+        print("       python run_pipeline.py --dry-run")
+        sys.exit(1)
+
+    user_input = sys.argv[1]
+    result = asyncio.run(run_pipeline(user_input))
+    print(json.dumps(result, indent=2, default=str))
+
+
+if __name__ == "__main__":
+    main()
+'''

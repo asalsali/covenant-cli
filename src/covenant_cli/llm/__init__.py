@@ -2,12 +2,14 @@
 
 Calls OpenAI API to generate a structured plan from a natural language
 description. Handles retries, validation, and error reporting.
+Also generates working tool implementations via a second LLM call.
 """
 
 import json
 import os
+import re
 
-from .prompts import SYSTEM_PROMPT
+from .prompts import SYSTEM_PROMPT, TOOL_IMPLEMENTATION_PROMPT
 
 
 # --- Validation ---
@@ -148,3 +150,94 @@ def generate_plan(description: str) -> dict:
 
     # Should not reach here, but just in case
     raise ValueError(f"Failed to generate plan after 2 attempts. Last error: {last_error}")
+
+
+# --- Tool Implementation Generation ---
+
+def _build_tool_spec_prompt(tools: list[dict]) -> str:
+    """Build the user prompt listing all tool specs for implementation."""
+    lines = ["Generate implementations for these tools:", ""]
+    for tool in tools:
+        params_str = ", ".join(tool.get("params", []))
+        lines.append(f"- {tool['name']}({params_str}): {tool['description']}")
+    return "\n".join(lines)
+
+
+def _parse_tool_implementations(raw_code: str, tool_names: list[str]) -> dict[str, str]:
+    """Parse LLM output into a dict of tool_name -> implementation code.
+
+    The LLM is instructed to separate tools with:
+        # --- TOOL: tool_name ---
+    """
+    implementations: dict[str, str] = {}
+
+    # Split on the tool separator pattern
+    sections = re.split(r"# --- TOOL:\s*(\w+)\s*---", raw_code)
+
+    # sections[0] = imports/preamble (before first separator)
+    # sections[1] = first tool name, sections[2] = first tool code, etc.
+    preamble = sections[0].strip() if sections else ""
+
+    for i in range(1, len(sections) - 1, 2):
+        tool_name = sections[i].strip()
+        tool_code = sections[i + 1].strip()
+        if tool_name in tool_names:
+            # Prepend imports/preamble to each tool so it's self-contained
+            if preamble:
+                implementations[tool_name] = preamble + "\n\n" + tool_code
+            else:
+                implementations[tool_name] = tool_code
+
+    return implementations
+
+
+def generate_tool_implementations(tools: list[dict]) -> dict[str, str]:
+    """Call LLM to generate working implementations for each tool.
+
+    Args:
+        tools: list of tool specs from the plan [{name, description, params}]
+
+    Returns:
+        dict mapping tool_name -> implementation code string.
+        Falls back to empty dict on any failure.
+    """
+    if not tools:
+        return {}
+
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return {}
+
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return {}
+
+    client = OpenAI(api_key=api_key)
+    tool_names = [t["name"] for t in tools]
+    user_prompt = _build_tool_spec_prompt(tools)
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.2,
+            max_tokens=4000,
+            messages=[
+                {"role": "system", "content": TOOL_IMPLEMENTATION_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+
+        raw_code = response.choices[0].message.content or ""
+
+        # Strip markdown fences if the LLM included them despite instructions
+        raw_code = re.sub(r"^```(?:python)?\s*\n?", "", raw_code.strip())
+        raw_code = re.sub(r"\n?```\s*$", "", raw_code.strip())
+
+        implementations = _parse_tool_implementations(raw_code, tool_names)
+
+        return implementations
+
+    except Exception:
+        # Any failure -> fall back to stubs, never crash
+        return {}

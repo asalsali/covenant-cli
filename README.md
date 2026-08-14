@@ -108,6 +108,8 @@ Same agent SDK. Same model. Different discipline.
 ```
 my-project/
 ├── GOVERNANCE.md              # 18 governance rules
+├── setup.sh                   # Auto-setup: venv, deps, migrations
+├── run_pipeline.py            # Standalone pipeline runner
 ├── registry/agents.json       # Service and agent registry
 ├── memory/
 │   ├── inheritance/           # Exit reports from prior runs
@@ -157,7 +159,12 @@ my-api/
 
 No database required -- the API reads the same governance files the CLI does.
 
-## What's New in v0.7.0
+## What's New in v0.8.0
+
+- **`setup.sh` auto-generation** -- `covenant create` now generates a `setup.sh` script inside your project that automates post-generation setup: virtual environment creation, dependency installation, API key check, and Django migrations. Works on Linux, Mac, and Git Bash on Windows.
+- **`run_pipeline.py` auto-generation** -- `covenant create` now generates a standalone pipeline runner that executes your full agent pipeline without Django. Run `python run_pipeline.py "your input"` to test agents immediately, or `--dry-run` to inspect the pipeline structure.
+
+### v0.7.0
 
 - **`covenant create`** -- describe what you want in natural language, get a full governed app with real agent code, typed I/O, and pipeline orchestration. The headline feature.
 - Requires `OPENAI_API_KEY` (uses gpt-4o-mini for plan generation)

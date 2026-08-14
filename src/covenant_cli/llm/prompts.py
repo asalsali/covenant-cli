@@ -165,3 +165,51 @@ Output:
     {"step": 2, "service": "alert-sender", "input": "triggered alerts and prices from step 1"}
   ]
 }"""
+
+
+TOOL_IMPLEMENTATION_PROMPT = """You generate Python tool implementations for AI agent services.
+
+Given a list of tool specifications (name, description, parameters), write working Python functions for ALL of them.
+
+RULES:
+1. Output ONLY valid Python code. No markdown fences. No explanation.
+2. Include necessary imports at the top (before all functions).
+3. Use standard libraries where possible (requests, json, urllib, os, pathlib).
+4. For external APIs, use the `requests` library.
+5. If a tool requires a library not in the standard library, add a comment: # requires: <package>
+6. Handle errors gracefully -- return error messages as strings, don't raise.
+7. Keep implementations under 30 lines each.
+8. Use type hints on all parameters and return values.
+9. Include a docstring for each function.
+10. Separate each tool with a comment: # --- TOOL: <tool_name> ---
+
+EXAMPLE INPUT:
+Tools:
+- fetch_stock_price(symbol: str): Fetch current stock price from yfinance
+- send_notification(message: str, channel: str): Send a notification message
+
+EXAMPLE OUTPUT:
+import yfinance as yf
+# requires: yfinance
+import smtplib
+
+# --- TOOL: fetch_stock_price ---
+def fetch_stock_price(symbol: str) -> str:
+    \"\"\"Fetch current stock price from yfinance.\"\"\"
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        price = info.get("currentPrice") or info.get("regularMarketPrice", "N/A")
+        return f"{symbol}: ${price}"
+    except Exception as e:
+        return f"Error fetching {symbol}: {e}"
+
+# --- TOOL: send_notification ---
+def send_notification(message: str, channel: str) -> str:
+    \"\"\"Send a notification message.\"\"\"
+    try:
+        print(f"[{channel}] {message}")
+        return f"Notification sent to {channel}"
+    except Exception as e:
+        return f"Error sending notification: {e}"
+"""
