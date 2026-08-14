@@ -25,30 +25,49 @@ The difference between an agent that works once and an agent you can trust is go
 ```bash
 pip install covenant-cli
 
-# Create a governed project (default scaffold)
+# Create a full governed app from a description (the fastest path)
+covenant create "A research app that searches papers and writes reviews"
+
+# Or scaffold manually:
 covenant init my-project
 cd my-project
-
-# Or create a FastAPI governed API
-covenant init my-api --template api
-cd my-api
-pip install -r requirements.txt
-uvicorn main:app --reload
-
-# Or create a Django governed webapp
-covenant init my-webapp --template webapp
-
-# Add a governed service
 covenant add-service research-agent
-
-# Check project health
 covenant status
+```
+
+## `covenant create` -- From Description to Governed App
+
+The headline feature. Describe what you want, and Covenant builds a governed project with real agent code:
+
+```bash
+covenant create "A customer support bot that classifies tickets and drafts responses"
+```
+
+What happens:
+1. Your description is sent to an LLM, which produces a structured plan
+2. The plan is displayed for your review -- services, agents, typed I/O, pipeline
+3. On confirmation, a complete Django webapp is scaffolded with:
+   - Real agent definitions with specific instructions (not boilerplate)
+   - Pydantic input/output models with typed fields from the plan
+   - Manager orchestration with exit reports and inheritance
+   - Tool stubs ready to implement
+   - Full governance scaffold (registry, memory, IDE rules)
+
+Every generated agent follows the same patterns as `covenant add-service` -- typed I/O, exit reports, memory inheritance. The difference is that the agents have real instructions and real types, not placeholders.
+
+```bash
+# Use a different template
+covenant create "stock alert system" --template api
+
+# Requires OPENAI_API_KEY
+export OPENAI_API_KEY=sk-...
 ```
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
+| `covenant create <description>` | Create a full governed app from a natural language description |
 | `covenant init <name> [--template api\|webapp]` | Create a new governed project (default, FastAPI API, or Django webapp) |
 | `covenant add-service <name>` | Add a governed service with manager, agents, typed schemas, and exit reports |
 | `covenant status` | Show project health: services, recent exit reports, warnings |
@@ -138,7 +157,12 @@ my-api/
 
 No database required -- the API reads the same governance files the CLI does.
 
-## What's New in v0.6.0
+## What's New in v0.7.0
+
+- **`covenant create`** -- describe what you want in natural language, get a full governed app with real agent code, typed I/O, and pipeline orchestration. The headline feature.
+- Requires `OPENAI_API_KEY` (uses gpt-4o-mini for plan generation)
+
+### v0.6.0
 
 - **Application templates** -- `covenant init --template api` scaffolds a FastAPI governed agent API; `--template webapp` scaffolds a Django webapp
 - **Three templates** -- default (CLI), api (FastAPI), webapp (Django) -- all sharing the same governance foundation

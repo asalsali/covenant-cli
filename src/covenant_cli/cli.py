@@ -10,6 +10,7 @@ from covenant_cli.commands.audit import audit_command
 from covenant_cli.commands.memo import memo_command
 from covenant_cli.commands.consolidate import consolidate_command
 from covenant_cli.commands.doctor import doctor_command
+from covenant_cli.commands.create import create_command
 
 
 @click.group()
@@ -34,6 +35,7 @@ cli.add_command(audit_command, "audit")
 cli.add_command(memo_command, "memo")
 cli.add_command(consolidate_command, "consolidate")
 cli.add_command(doctor_command, "doctor")
+cli.add_command(create_command, "create")
 
 
 if __name__ == "__main__":
