@@ -14,6 +14,65 @@ python manage.py createsuperuser</code></pre>
 </div>
 {% endif %}
 
+<!-- Hero Input Section -->
+<div class="hero-input">
+    <h1 class="hero-title">What would you like to build?</h1>
+    <p class="hero-subtitle">Describe your task and the pipeline will run every service in sequence.</p>
+    {% if services %}
+    <form method="post" action="{% url 'dashboard:run_pipeline' %}">
+        {% csrf_token %}
+        <div class="hero-form">
+            <textarea
+                name="user_input"
+                rows="3"
+                class="hero-textarea"
+                placeholder="Describe your task... e.g., 'Find recent papers on quantum computing applications in drug discovery'"
+                required
+            ></textarea>
+            <button type="submit" class="btn btn-primary btn-hero">Run Pipeline</button>
+        </div>
+        <p class="hero-hint">{{ services|length }} service{{ services|length|pluralize }} will execute in order</p>
+    </form>
+    {% else %}
+    <div class="hero-empty">
+        <p>No services registered yet. Add a service to get started.</p>
+        <p class="hint">Use <code>covenant add-service &lt;name&gt;</code> to create one, then register it in Django admin.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Recent Pipeline Runs -->
+{% if recent_pipelines %}
+<div class="section">
+    <h2>Recent Pipelines</h2>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Pipeline</th>
+                <th>Input</th>
+                <th>Status</th>
+                <th>Started</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for group in recent_pipelines %}
+            <tr>
+                <td>
+                    <a href="{% url 'dashboard:pipeline_results' group.id %}">
+                        Pipeline #{{ group.id }}
+                    </a>
+                </td>
+                <td class="truncate-cell">{{ group.user_input|truncatechars:60 }}</td>
+                <td><span class="badge badge-{{ group.status }}">{{ group.get_status_display }}</span></td>
+                <td>{{ group.created_at|timesince }} ago</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<!-- Services -->
 <div class="page-header">
     <h1>Services</h1>
     <p class="subtitle">Governed agent services for {% endraw %}{{ project_name }}{% raw %}</p>
@@ -61,8 +120,9 @@ python manage.py createsuperuser</code></pre>
             {% endwith %}
         </div>
         <div class="card-footer">
-            <form method="post" action="{% url 'dashboard:trigger_run' service.slug %}">
+            <form method="post" action="{% url 'dashboard:trigger_run' service.slug %}" class="trigger-form">
                 {% csrf_token %}
+                <input type="text" name="user_input" placeholder="Enter request..." class="input-inline">
                 <button type="submit" class="btn btn-primary">Run</button>
             </form>
             <a href="{% url 'dashboard:service_detail' service.slug %}" class="btn btn-secondary">Details</a>

@@ -159,7 +159,16 @@ my-api/
 
 No database required -- the API reads the same governance files the CLI does.
 
-## What's New in v0.8.0
+## What's New in v0.9.0
+
+- **Interactive Web UI** -- the generated Django webapp is now a real application, not just a monitor. Type a query on the homepage, watch it flow through the pipeline service by service, and view results as they complete. No JavaScript frameworks -- just HTML forms and auto-refresh.
+  - Hero input form on the homepage -- the main UX is a prominent textarea where you describe your task
+  - Pipeline execution -- all services run in sequence, output feeds input, with a live progress view
+  - RunGroup model tracks full pipeline executions so you can review past runs
+  - Individual service trigger forms now accept input text
+  - Pipeline results page auto-refreshes while running, shows exit reports when complete
+
+### v0.8.0
 
 - **`setup.sh` auto-generation** -- `covenant create` now generates a `setup.sh` script inside your project that automates post-generation setup: virtual environment creation, dependency installation, API key check, and Django migrations. Works on Linux, Mac, and Git Bash on Windows.
 - **`run_pipeline.py` auto-generation** -- `covenant create` now generates a standalone pipeline runner that executes your full agent pipeline without Django. Run `python run_pipeline.py "your input"` to test agents immediately, or `--dry-run` to inspect the pipeline structure.

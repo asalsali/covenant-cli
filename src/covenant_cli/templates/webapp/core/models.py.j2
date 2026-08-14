@@ -54,11 +54,45 @@ class Service(models.Model):
         return self.runs.first()
 
 
+class RunGroup(models.Model):
+    """A group of related runs from a single pipeline execution."""
+
+    user_input = models.TextField()
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ("running", "Running"),
+            ("completed", "Completed"),
+            ("failed", "Failed"),
+        ],
+        default="running",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Pipeline #{self.pk} ({self.status})"
+
+    def all_complete(self):
+        """Return True if every run in the group has finished."""
+        return not self.runs.filter(status__in=["pending", "running"]).exists()
+
+
 class AgentRun(models.Model):
     """A single execution of an agent service."""
 
     service = models.ForeignKey(
         Service, on_delete=models.CASCADE, related_name="runs"
+    )
+    run_group = models.ForeignKey(
+        RunGroup,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="runs",
     )
     status = models.CharField(
         max_length=20,

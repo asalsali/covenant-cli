@@ -326,6 +326,7 @@ def _init_webapp(project_dir: Path, context: dict, tree, sdk: str | None):
         "templates/dashboard/index.html": _render_template(env, "templates/dashboard/index.html.j2", context),
         "templates/dashboard/service_detail.html": _render_template(env, "templates/dashboard/service_detail.html.j2", context),
         "templates/dashboard/run_detail.html": _render_template(env, "templates/dashboard/run_detail.html.j2", context),
+        "templates/dashboard/pipeline_results.html": _render_template(env, "templates/dashboard/pipeline_results.html.j2", context),
     }
     for rel_path, content in html_files.items():
         filepath = project_dir / rel_path

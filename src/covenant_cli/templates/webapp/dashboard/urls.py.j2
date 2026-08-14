@@ -23,4 +23,10 @@ urlpatterns = [
         views.trigger_run,
         name="trigger_run",
     ),
+    path("run/", views.run_pipeline, name="run_pipeline"),
+    path(
+        "results/<int:group_id>/",
+        views.pipeline_results,
+        name="pipeline_results",
+    ),
 ]

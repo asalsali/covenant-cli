@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "covenant-cli"
-version = "0.8.3"
+version = "0.9.0"
 description = "Scaffold governed agent services with built-in governance, exit reports, and memory."
 readme = "README.md"
 license = {file = "LICENSE"}

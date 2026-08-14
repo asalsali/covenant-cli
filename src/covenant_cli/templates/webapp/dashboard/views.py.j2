@@ -3,26 +3,32 @@
 from django.http import HttpResponseNotAllowed
 from django.shortcuts import get_object_or_404, redirect, render
 
-from core.models import AgentRun, Service
-from dashboard.runner import run_service_background
+from core.models import AgentRun, RunGroup, Service
+from dashboard.runner import run_pipeline_background, run_service_background
 
 
 def index(request):
-    """List all services with summary stats."""
+    """Homepage: hero input form + services + recent pipeline runs."""
     try:
         services = Service.objects.all()
         recent_runs = AgentRun.objects.select_related("service")[:5]
+        recent_pipelines = RunGroup.objects.all()[:5]
     except Exception:
-        # Tables don't exist yet — user needs to run migrate
+        # Tables don't exist yet -- user needs to run migrate
         return render(request, "dashboard/index.html", {
             "services": [],
             "recent_runs": [],
+            "recent_pipelines": [],
             "needs_migrate": True,
         })
     return render(
         request,
         "dashboard/index.html",
-        {"services": services, "recent_runs": recent_runs},
+        {
+            "services": services,
+            "recent_runs": recent_runs,
+            "recent_pipelines": recent_pipelines,
+        },
     )
 
 
@@ -54,6 +60,53 @@ def trigger_run(request, slug):
         return HttpResponseNotAllowed(["POST"])
 
     service = get_object_or_404(Service, slug=slug)
-    run = AgentRun.objects.create(service=service)
+    user_input = request.POST.get("user_input", "")
+    run = AgentRun.objects.create(
+        service=service,
+        input_data={"query": user_input} if user_input else {},
+    )
     run_service_background(run.id)
     return redirect("dashboard:service_detail", slug=service.slug)
+
+
+def run_pipeline(request):
+    """Launch a full pipeline run across all active services (POST only)."""
+    if request.method != "POST":
+        return HttpResponseNotAllowed(["POST"])
+
+    user_input = request.POST.get("user_input", "").strip()
+    if not user_input:
+        return redirect("dashboard:index")
+
+    services = Service.objects.filter(status__in=["registered", "active"])
+    if not services.exists():
+        return redirect("dashboard:index")
+
+    # Create a RunGroup and one AgentRun per service
+    group = RunGroup.objects.create(user_input=user_input)
+    for service in services:
+        AgentRun.objects.create(
+            service=service,
+            run_group=group,
+            status="pending",
+        )
+
+    run_pipeline_background(group.id)
+    return redirect("dashboard:pipeline_results", group_id=group.id)
+
+
+def pipeline_results(request, group_id):
+    """Show pipeline progress and results."""
+    group = get_object_or_404(RunGroup, id=group_id)
+    runs = group.runs.select_related("service").order_by("id")
+    all_complete = group.all_complete()
+
+    return render(
+        request,
+        "dashboard/pipeline_results.html",
+        {
+            "group": group,
+            "runs": runs,
+            "all_complete": all_complete,
+        },
+    )

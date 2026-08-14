@@ -39,9 +39,10 @@
 <div class="section">
     <div class="section-header">
         <h2>Run History</h2>
-        <form method="post" action="{% url 'dashboard:trigger_run' service.slug %}">
+        <form method="post" action="{% url 'dashboard:trigger_run' service.slug %}" class="trigger-form-inline">
             {% csrf_token %}
-            <button type="submit" class="btn btn-primary">Trigger Run</button>
+            <input type="text" name="user_input" placeholder="Enter your request..." class="input-field">
+            <button type="submit" class="btn btn-primary">Run {{ service.name }}</button>
         </form>
     </div>
 

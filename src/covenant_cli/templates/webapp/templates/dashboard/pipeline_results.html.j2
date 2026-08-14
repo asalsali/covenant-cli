@@ -1,0 +1,196 @@
+{% raw %}{% extends "base.html" %}
+
+{% block title %}Pipeline #{{ group.id }}{% endblock %}
+
+{% block extra_head %}
+{% if not all_complete %}
+<meta http-equiv="refresh" content="3">
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="breadcrumb">
+        <a href="{% url 'dashboard:index' %}">Dashboard</a> &rsaquo; Pipeline #{{ group.id }}
+    </div>
+    <h1>
+        {% if all_complete %}
+            Pipeline Complete
+        {% else %}
+            Pipeline Running
+        {% endif %}
+    </h1>
+    <span class="badge badge-{{ group.status }}">{{ group.get_status_display }}</span>
+</div>
+
+<div class="pipeline-query">
+    <span class="pipeline-query-label">Input</span>
+    <p>{{ group.user_input }}</p>
+</div>
+
+{% if not all_complete %}
+<div class="refresh-indicator">
+    <span class="refresh-dot"></span> Auto-refreshing every 3 seconds
+</div>
+{% endif %}
+
+<!-- Pipeline Steps -->
+<div class="pipeline-steps">
+    {% for run in runs %}
+    <div class="pipeline-step pipeline-step--{{ run.status }}">
+        <div class="pipeline-step-header">
+            <span class="pipeline-step-number">{{ forloop.counter }}</span>
+            <div class="pipeline-step-title">
+                <h3>{{ run.service.name }}</h3>
+                <span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span>
+            </div>
+        </div>
+
+        {% if run.status == "running" %}
+        <div class="pipeline-step-body">
+            <p class="running-text">Processing...</p>
+        </div>
+        {% endif %}
+
+        {% if run.status == "completed" %}
+        <div class="pipeline-step-body">
+            {% if run.duration_seconds is not None %}
+            <p class="step-duration">Completed in {{ run.duration_seconds|floatformat:1 }}s</p>
+            {% endif %}
+
+            {% if run.exit_report.what_worked %}
+            <div class="step-findings step-findings--success">
+                <h4>What Worked</h4>
+                {% if run.exit_report.what_worked.0 %}
+                <ul>
+                    {% for item in run.exit_report.what_worked %}
+                    <li>{{ item }}</li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p>{{ run.exit_report.what_worked }}</p>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            {% if run.exit_report.output %}
+            <div class="step-findings">
+                <h4>Output</h4>
+                <pre class="code-block code-block--compact">{{ run.exit_report.output|truncatechars:500 }}</pre>
+            </div>
+            {% endif %}
+
+            {% if run.exit_report.key_findings %}
+            <div class="step-findings">
+                <h4>Key Findings</h4>
+                <ul>
+                    {% for item in run.exit_report.key_findings %}
+                    <li>{{ item }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <a href="{% url 'dashboard:run_detail' run.service.slug run.id %}" class="btn btn-secondary btn-sm">
+                Full Report
+            </a>
+        </div>
+        {% endif %}
+
+        {% if run.status == "failed" %}
+        <div class="pipeline-step-body">
+            {% if run.exit_report.error %}
+            <div class="step-findings step-findings--failure">
+                <h4>Error</h4>
+                <pre class="code-block code-block--compact">{{ run.exit_report.error }}</pre>
+            </div>
+            {% endif %}
+
+            {% if run.exit_report.what_failed %}
+            <div class="step-findings step-findings--failure">
+                <h4>What Failed</h4>
+                <ul>
+                    {% for item in run.exit_report.what_failed %}
+                    <li>{{ item }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <a href="{% url 'dashboard:run_detail' run.service.slug run.id %}" class="btn btn-secondary btn-sm">
+                Full Report
+            </a>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if not forloop.last %}
+    <div class="pipeline-arrow">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 5v14M19 12l-7 7-7-7"/>
+        </svg>
+    </div>
+    {% endif %}
+    {% endfor %}
+</div>
+
+{% if all_complete %}
+<!-- Final Results Summary -->
+<div class="section pipeline-summary">
+    <h2>Summary</h2>
+    <div class="stats-bar">
+        <div class="stat-box">
+            <span class="stat-number">{{ runs|length }}</span>
+            <span class="stat-label">Services</span>
+        </div>
+        <div class="stat-box">
+            <span class="stat-number">{{ group.status|title }}</span>
+            <span class="stat-label">Result</span>
+        </div>
+        <div class="stat-box">
+            <span class="stat-number">{{ group.created_at|timesince }}</span>
+            <span class="stat-label">Total Time</span>
+        </div>
+    </div>
+
+    {% with last_run=runs.last %}
+    {% if last_run and last_run.exit_report %}
+    <div class="final-output">
+        <h3>Final Output</h3>
+
+        {% if last_run.exit_report.recommendations %}
+        <div class="report-section report-recommendations">
+            <h3>Recommendations</h3>
+            {% if last_run.exit_report.recommendations.0 %}
+            <ul>
+                {% for item in last_run.exit_report.recommendations %}
+                <li>{{ item }}</li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p>{{ last_run.exit_report.recommendations }}</p>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% if last_run.exit_report.output %}
+        <div class="report-section">
+            <h3>Output</h3>
+            <pre class="code-block">{{ last_run.exit_report.output }}</pre>
+        </div>
+        {% endif %}
+
+        <details class="raw-report">
+            <summary>Raw Exit Report (JSON)</summary>
+            <pre class="code-block">{{ last_run.exit_report|pprint }}</pre>
+        </details>
+    </div>
+    {% endif %}
+    {% endwith %}
+</div>
+
+<div style="text-align: center; margin-top: 1.5rem;">
+    <a href="{% url 'dashboard:index' %}" class="btn btn-primary">Run Another Pipeline</a>
+</div>
+{% endif %}
+{% endblock %}{% endraw %}

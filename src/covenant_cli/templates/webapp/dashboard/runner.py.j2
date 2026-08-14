@@ -81,3 +81,99 @@ def run_service_background(run_id: int):
         report_path.write_text(json.dumps(run.exit_report, indent=2))
 
     threading.Thread(target=_execute, daemon=True).start()
+
+
+def run_pipeline_background(group_id: int):
+    """Run all services in pipeline order as a background thread.
+
+    Each service receives the previous service's exit report as input,
+    creating a chain: user_input -> service_1 -> service_2 -> ...
+    """
+
+    def _execute():
+        from core.models import AgentRun, RunGroup
+        from django.utils import timezone as dj_tz
+
+        group = RunGroup.objects.get(id=group_id)
+        runs = list(
+            AgentRun.objects.filter(run_group=group).order_by("id")
+        )
+
+        previous_result = {"query": group.user_input}
+
+        for run in runs:
+            run.status = "running"
+            run.input_data = previous_result
+            run.save()
+
+            start = datetime.now(timezone.utc)
+            try:
+                module = importlib.import_module(
+                    f"services.{run.service.slug}.manager"
+                )
+
+                manager_class = None
+                for name, obj in inspect.getmembers(module, inspect.isclass):
+                    if name.endswith("Manager") or name.endswith("Service"):
+                        manager_class = obj
+                        break
+
+                if manager_class is None:
+                    raise ImportError(
+                        f"No Manager class found in "
+                        f"services.{run.service.slug}.manager"
+                    )
+
+                manager = manager_class()
+                result = asyncio.run(manager.run(previous_result))
+
+                run.status = "completed"
+                run.exit_report = (
+                    result
+                    if isinstance(result, dict)
+                    else {"output": str(result)}
+                )
+                previous_result = run.exit_report
+            except Exception as e:
+                run.status = "failed"
+                run.exit_report = {
+                    "error": str(e),
+                    "what_failed": [str(e)],
+                }
+                # On failure, still pass error context to next service
+                previous_result = run.exit_report
+
+            run.completed_at = dj_tz.now()
+            run.duration_seconds = (
+                datetime.now(timezone.utc) - start
+            ).total_seconds()
+
+            usage = (run.exit_report or {}).get("usage", {})
+            run.tokens_used = usage.get("input_tokens", 0) + usage.get(
+                "output_tokens", 0
+            )
+            run.cost = usage.get("total_cost", 0.0)
+            run.save()
+
+            # Write to filesystem for CLI compatibility
+            memory_dir = Path("memory/inheritance")
+            memory_dir.mkdir(parents=True, exist_ok=True)
+            report_path = memory_dir / (
+                f"{run.service.slug}-"
+                f"{start.strftime('%Y%m%dT%H%M%S')}.json"
+            )
+            report_path.write_text(json.dumps(run.exit_report, indent=2))
+
+            # If a service failed, mark the group as failed and stop
+            if run.status == "failed":
+                group.status = "failed"
+                group.completed_at = dj_tz.now()
+                group.save()
+                return
+
+        # All services completed successfully
+        group.status = "completed"
+        group.completed_at = dj_tz.now()
+        group.save()
+
+    threading.Thread(target=_execute, daemon=True).start()

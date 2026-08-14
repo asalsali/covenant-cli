@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 
-from core.models import AgentRun, Service
+from core.models import AgentRun, RunGroup, Service
 
 
 @admin.register(Service)
@@ -11,6 +11,13 @@ class ServiceAdmin(admin.ModelAdmin):
     list_filter = ["status", "sdk"]
     search_fields = ["name", "slug"]
     prepopulated_fields = {"slug": ("name",)}
+
+
+@admin.register(RunGroup)
+class RunGroupAdmin(admin.ModelAdmin):
+    list_display = ["id", "status", "created_at", "completed_at"]
+    list_filter = ["status"]
+    readonly_fields = ["user_input"]
 
 
 @admin.register(AgentRun)
