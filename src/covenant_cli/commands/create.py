@@ -192,15 +192,11 @@ def _create_services(
         )
         tree.add(file_added(f"services/{slug}/memory/README.md"))
 
-    # Generate setup.sh
+    # Generate setup_project.py
     setup_content = generate_setup_script(plan["project_name"], plan.get("sdk", "openai"))
-    setup_path = project_dir / "setup.sh"
-    setup_path.write_text(setup_content, encoding="utf-8", newline="\n")
-    try:
-        setup_path.chmod(0o755)
-    except OSError:
-        pass  # chmod may not work on Windows
-    tree.add(file_added("setup.sh"))
+    setup_path = project_dir / "setup_project.py"
+    setup_path.write_text(setup_content, encoding="utf-8")
+    tree.add(file_added("setup_project.py"))
 
     # Generate pipeline runner
     runner_content = generate_pipeline_runner(plan)
@@ -400,7 +396,7 @@ def create_command(description: str, sdk: str, template_name: str):
             f"[bold {GOLD}]Project '{project_name}' created with "
             f"{svc_count} services and {agent_count} agents.[/]\n\n"
             f"  [{INK_LIGHT}]cd {project_name}[/]\n"
-            f"  [{INK_LIGHT}]bash setup.sh[/]   [{INK_LIGHT}](or run the steps manually)[/]\n"
+            f"  [{INK_LIGHT}]python setup_project.py[/]   [{INK_LIGHT}](or run the steps manually)[/]\n"
             + (
                 f"  [{INK_LIGHT}]python manage.py runserver[/]\n"
                 if template_name == "webapp"

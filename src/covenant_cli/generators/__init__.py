@@ -466,47 +466,77 @@ def generate_schemas_init(service_spec: dict) -> str:
 
 
 def generate_setup_script(project_name: str, sdk: str) -> str:
-    """Generate setup.sh for automated project setup."""
-    return f'''#!/usr/bin/env bash
-set -e
+    """Generate setup.py (cross-platform setup script, not a package setup)."""
+    return f'''#!/usr/bin/env python3
+"""Setup script for {project_name}. Cross-platform (Windows, Mac, Linux)."""
 
-echo "Setting up {project_name}..."
+import os
+import subprocess
+import sys
+from pathlib import Path
 
-# Create virtual environment if not in one
-if [ -z "$VIRTUAL_ENV" ]; then
-    echo "Creating virtual environment..."
-    python3 -m venv .venv
-    # Activate -- works on Linux/Mac and Git Bash on Windows
-    if [ -f .venv/bin/activate ]; then
-        source .venv/bin/activate
-    elif [ -f .venv/Scripts/activate ]; then
-        source .venv/Scripts/activate
-    fi
-    echo "Virtual environment created and activated."
-fi
 
-# Install dependencies
-echo "Installing dependencies..."
-pip install -r requirements.txt
+def run(cmd, check=True):
+    """Run a command and print it."""
+    print(f"  $ {{' '.join(cmd) if isinstance(cmd, list) else cmd}}")
+    subprocess.run(cmd, check=check, shell=isinstance(cmd, str))
 
-# Check for API key
-if [ -z "$OPENAI_API_KEY" ]; then
-    echo ""
-    echo "WARNING: OPENAI_API_KEY is not set."
-    echo "Copy .env.example to .env and add your key:"
-    echo "  cp .env.example .env"
-    echo ""
-fi
 
-# Run Django setup
-echo "Running database migrations..."
-python manage.py migrate
+def main():
+    print()
+    print(f"  Setting up {project_name}...")
+    print()
 
-echo ""
-echo "Setup complete! To start the app:"
-echo "  python manage.py runserver"
-echo ""
-echo "Then visit http://127.0.0.1:8000/"
+    # Create virtual environment if not in one
+    if not os.environ.get("VIRTUAL_ENV"):
+        venv_dir = Path(".venv")
+        if not venv_dir.exists():
+            print("  Creating virtual environment...")
+            run([sys.executable, "-m", "venv", ".venv"])
+            print("  Virtual environment created.")
+            print()
+            # Tell user to activate and re-run
+            if sys.platform == "win32":
+                activate = ".venv\\\\Scripts\\\\activate"
+            else:
+                activate = "source .venv/bin/activate"
+            print(f"  Activate it and re-run setup:")
+            print(f"    {{activate}}")
+            print(f"    python setup_project.py")
+            return
+        else:
+            print("  .venv exists but is not activated.")
+            if sys.platform == "win32":
+                print("  Run: .venv\\\\Scripts\\\\activate")
+            else:
+                print("  Run: source .venv/bin/activate")
+            print("  Then re-run: python setup_project.py")
+            return
+
+    # Install dependencies
+    print("  Installing dependencies...")
+    run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"])
+    print()
+
+    # Check for API key
+    if not os.environ.get("OPENAI_API_KEY"):
+        print("  WARNING: OPENAI_API_KEY is not set.")
+        print("  Copy .env.example to .env and add your key.")
+        print()
+
+    # Run Django migrations
+    print("  Running database migrations...")
+    run([sys.executable, "manage.py", "migrate"])
+    print()
+
+    print("  Setup complete! Next steps:")
+    print(f"    python manage.py runserver")
+    print(f"    Then visit http://127.0.0.1:8000/")
+    print()
+
+
+if __name__ == "__main__":
+    main()
 '''
 
 
