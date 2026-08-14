@@ -3,6 +3,17 @@
 {% block title %}Dashboard{% endblock %}
 
 {% block content %}
+
+{% if needs_migrate %}
+<div class="card" style="border-color: var(--gold); margin-bottom: 2rem; padding: 2rem;">
+    <h2 style="color: var(--gold); margin-bottom: 0.5rem;">Database Setup Required</h2>
+    <p>Run these commands to set up the database:</p>
+    <pre style="background: var(--ink); color: var(--paper); padding: 1rem; border-radius: 4px; margin-top: 1rem;"><code>python manage.py migrate
+python manage.py createsuperuser</code></pre>
+    <p style="margin-top: 1rem; color: var(--ink-light);">Then refresh this page.</p>
+</div>
+{% endif %}
+
 <div class="page-header">
     <h1>Services</h1>
     <p class="subtitle">Governed agent services for {% endraw %}{{ project_name }}{% raw %}</p>

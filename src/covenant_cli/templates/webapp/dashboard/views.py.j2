@@ -9,8 +9,16 @@ from dashboard.runner import run_service_background
 
 def index(request):
     """List all services with summary stats."""
-    services = Service.objects.all()
-    recent_runs = AgentRun.objects.select_related("service")[:5]
+    try:
+        services = Service.objects.all()
+        recent_runs = AgentRun.objects.select_related("service")[:5]
+    except Exception:
+        # Tables don't exist yet — user needs to run migrate
+        return render(request, "dashboard/index.html", {
+            "services": [],
+            "recent_runs": [],
+            "needs_migrate": True,
+        })
     return render(
         request,
         "dashboard/index.html",

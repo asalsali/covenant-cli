@@ -195,7 +195,7 @@ def _create_services(
     # Generate setup.sh
     setup_content = generate_setup_script(plan["project_name"], plan.get("sdk", "openai"))
     setup_path = project_dir / "setup.sh"
-    setup_path.write_text(setup_content, encoding="utf-8")
+    setup_path.write_text(setup_content, encoding="utf-8", newline="\n")
     try:
         setup_path.chmod(0o755)
     except OSError:
