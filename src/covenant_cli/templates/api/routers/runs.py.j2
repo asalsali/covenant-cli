@@ -1,0 +1,59 @@
+"""{{ project_name }} -- Run detail endpoints."""
+
+import json
+from pathlib import Path
+
+from fastapi import APIRouter, HTTPException
+
+from models.schemas import RunOut
+
+router = APIRouter()
+
+INHERITANCE_DIR = Path("memory/inheritance")
+
+
+def _load_exit_reports() -> list[dict]:
+    """Load all exit reports from memory/inheritance/."""
+    if not INHERITANCE_DIR.exists():
+        return []
+
+    reports = []
+    for f in sorted(INHERITANCE_DIR.glob("*.json"), reverse=True):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            data["_filename"] = f.stem
+            reports.append(data)
+        except (json.JSONDecodeError, OSError):
+            continue
+    return reports
+
+
+def _report_to_run(report: dict) -> RunOut:
+    """Convert an exit report dict to a RunOut model."""
+    return RunOut(
+        id=report.get("runId", report.get("agentId", report.get("_filename", "unknown"))),
+        service=report.get("service", report.get("agentId", "unknown")),
+        status="completed" if report.get("mandateCompleted") else "failed",
+        started_at=report.get("startedAt", report.get("bornAt", "")),
+        duration_seconds=report.get("durationSeconds"),
+        tokens_used=report.get("tokensConsumed", 0) if isinstance(report.get("tokensConsumed"), int) else 0,
+        exit_report=report,
+    )
+
+
+@router.get("", response_model=list[RunOut])
+def list_runs(limit: int = 20):
+    """List recent runs (exit reports), newest first."""
+    reports = _load_exit_reports()
+    return [_report_to_run(r) for r in reports[:limit]]
+
+
+@router.get("/{run_id}", response_model=RunOut)
+def get_run(run_id: str):
+    """Get a single run by ID."""
+    reports = _load_exit_reports()
+    for report in reports:
+        rid = report.get("runId", report.get("agentId", report.get("_filename", "")))
+        if rid == run_id:
+            return _report_to_run(report)
+    raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")

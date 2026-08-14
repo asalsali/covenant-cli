@@ -1,0 +1,90 @@
+"""{{ project_name }} -- Background service runner.
+
+Runs a governed service in a background thread. Writes exit reports
+to memory/inheritance/ when complete -- same file format the CLI reads.
+"""
+
+import json
+import time
+import traceback
+from datetime import datetime, timezone
+from pathlib import Path
+
+INHERITANCE_DIR = Path("memory/inheritance")
+
+
+def run_service_background(
+    service_slug: str,
+    run_id: str,
+    input_data: dict | None = None,
+) -> None:
+    """Execute a service run and write an exit report.
+
+    This function is designed to be called in a background thread via
+    threading.Thread(target=run_service_background, args=(...)).
+
+    Replace the placeholder logic below with your actual service
+    invocation (e.g., calling your agent SDK).
+    """
+    started_at = datetime.now(timezone.utc)
+    start_time = time.monotonic()
+
+    exit_report = {
+        "runId": run_id,
+        "service": service_slug,
+        "mandate": f"Triggered via API: {service_slug}",
+        "startedAt": started_at.isoformat(),
+        "mandateCompleted": False,
+        "keyFindings": [],
+        "whatWorked": "",
+        "whatFailed": "",
+        "recommendationsForNextAgent": "",
+        "tokensConsumed": 0,
+        "inputData": input_data,
+    }
+
+    try:
+        # ----------------------------------------------------------------
+        # TODO: Replace this block with your actual service logic.
+        #
+        # Example with OpenAI Agents SDK:
+        #   from agents import Agent, Runner
+        #   agent = Agent(name=service_slug, instructions="...")
+        #   result = Runner.run_sync(agent, input_data.get("query", ""))
+        #   exit_report["keyFindings"] = [result.final_output]
+        #
+        # Example with CrewAI:
+        #   from crewai import Crew
+        #   crew = Crew(agents=[...], tasks=[...])
+        #   result = crew.kickoff()
+        #   exit_report["keyFindings"] = [str(result)]
+        # ----------------------------------------------------------------
+
+        # Placeholder: simulate a service run
+        time.sleep(0.5)
+        exit_report["mandateCompleted"] = True
+        exit_report["whatWorked"] = "Service executed successfully via API trigger"
+        exit_report["keyFindings"] = [
+            f"Service '{service_slug}' completed run {run_id}"
+        ]
+
+    except Exception as exc:
+        exit_report["mandateCompleted"] = False
+        exit_report["whatFailed"] = str(exc)
+        exit_report["keyFindings"] = [
+            f"Service '{service_slug}' failed: {exc}"
+        ]
+        exit_report["traceback"] = traceback.format_exc()
+
+    finally:
+        elapsed = time.monotonic() - start_time
+        exit_report["completedAt"] = datetime.now(timezone.utc).isoformat()
+        exit_report["durationSeconds"] = round(elapsed, 2)
+
+        # Write exit report to memory/inheritance/
+        INHERITANCE_DIR.mkdir(parents=True, exist_ok=True)
+        report_path = INHERITANCE_DIR / f"{run_id}-exit_report.json"
+        report_path.write_text(
+            json.dumps(exit_report, indent=2) + "\n",
+            encoding="utf-8",
+        )

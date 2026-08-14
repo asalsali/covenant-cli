@@ -1,0 +1,26 @@
+"""{{ project_name }} -- dashboard URL configuration."""
+
+from django.urls import path
+
+from dashboard import views
+
+app_name = "dashboard"
+
+urlpatterns = [
+    path("", views.index, name="index"),
+    path(
+        "service/<slug:slug>/",
+        views.service_detail,
+        name="service_detail",
+    ),
+    path(
+        "service/<slug:slug>/run/<int:run_id>/",
+        views.run_detail,
+        name="run_detail",
+    ),
+    path(
+        "service/<slug:slug>/trigger/",
+        views.trigger_run,
+        name="trigger_run",
+    ),
+]

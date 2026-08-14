@@ -1,0 +1,65 @@
+"""{{ project_name }} -- Health endpoint."""
+
+import json
+from pathlib import Path
+
+from fastapi import APIRouter
+
+from models.schemas import HealthOut
+
+router = APIRouter()
+
+REGISTRY_PATH = Path("registry/agents.json")
+INHERITANCE_DIR = Path("memory/inheritance")
+
+
+@router.get("/health", response_model=HealthOut)
+def health_check():
+    """Governance health check -- mirrors `covenant status` output as JSON."""
+    # Load registry
+    if REGISTRY_PATH.exists():
+        try:
+            registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            registry = {}
+    else:
+        registry = {}
+
+    services = registry.get("services", [])
+
+    # Count runs and successes from exit reports
+    total_runs = 0
+    successes = 0
+    last_consolidation = None
+
+    if INHERITANCE_DIR.exists():
+        for f in INHERITANCE_DIR.glob("*.json"):
+            try:
+                report = json.loads(f.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            total_runs += 1
+            if report.get("mandateCompleted", False):
+                successes += 1
+
+    # Check for consolidation timestamp
+    consolidation_path = Path("memory/consolidation")
+    if consolidation_path.exists():
+        summaries = sorted(consolidation_path.glob("*.json"), reverse=True)
+        if summaries:
+            try:
+                latest = json.loads(summaries[0].read_text(encoding="utf-8"))
+                last_consolidation = latest.get("consolidatedAt")
+            except (json.JSONDecodeError, OSError):
+                pass
+
+    success_rate = round((successes / total_runs) * 100, 1) if total_runs > 0 else 100.0
+
+    return HealthOut(
+        project="{{ project_name }}",
+        governance="active" if REGISTRY_PATH.exists() else "missing",
+        services=len(services),
+        total_runs=total_runs,
+        success_rate=success_rate,
+        last_consolidation=last_consolidation,
+    )

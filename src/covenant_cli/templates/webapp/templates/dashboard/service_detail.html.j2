@@ -1,0 +1,113 @@
+{% raw %}{% extends "base.html" %}
+
+{% block title %}{{ service.name }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="breadcrumb">
+        <a href="{% url 'dashboard:index' %}">Dashboard</a> &rsaquo; {{ service.name }}
+    </div>
+    <h1>{{ service.name }}</h1>
+    <span class="badge badge-{{ service.status }}">{{ service.get_status_display }}</span>
+</div>
+
+<div class="stats-bar">
+    <div class="stat-box">
+        <span class="stat-number">{{ service.runs.count }}</span>
+        <span class="stat-label">Total Runs</span>
+    </div>
+    <div class="stat-box">
+        <span class="stat-number">
+            {% if service.success_rate is not None %}
+                {{ service.success_rate }}%
+            {% else %}
+                &mdash;
+            {% endif %}
+        </span>
+        <span class="stat-label">Success Rate</span>
+    </div>
+    <div class="stat-box">
+        <span class="stat-number">{{ service.total_tokens }}</span>
+        <span class="stat-label">Total Tokens</span>
+    </div>
+    <div class="stat-box">
+        <span class="stat-number">${{ service.total_cost|floatformat:4 }}</span>
+        <span class="stat-label">Total Cost</span>
+    </div>
+</div>
+
+<div class="section">
+    <div class="section-header">
+        <h2>Run History</h2>
+        <form method="post" action="{% url 'dashboard:trigger_run' service.slug %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary">Trigger Run</button>
+        </form>
+    </div>
+
+    {% if runs %}
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Run</th>
+                <th>Status</th>
+                <th>Started</th>
+                <th>Duration</th>
+                <th>Tokens</th>
+                <th>Cost</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for run in runs %}
+            <tr>
+                <td>
+                    <a href="{% url 'dashboard:run_detail' service.slug run.id %}">
+                        #{{ run.id }}
+                    </a>
+                </td>
+                <td><span class="badge {{ run.status_color }}">{{ run.get_status_display }}</span></td>
+                <td>{{ run.started_at|timesince }} ago</td>
+                <td>
+                    {% if run.duration_seconds is not None %}
+                        {{ run.duration_seconds|floatformat:1 }}s
+                    {% else %}
+                        &mdash;
+                    {% endif %}
+                </td>
+                <td>{{ run.tokens_used }}</td>
+                <td>${{ run.cost|floatformat:4 }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <p>No runs yet. Click "Trigger Run" to start one.</p>
+    </div>
+    {% endif %}
+</div>
+
+<div class="section">
+    <h2>Service Info</h2>
+    <table class="table info-table">
+        <tr>
+            <th>SDK</th>
+            <td><span class="tag">{{ service.sdk }}</span></td>
+        </tr>
+        <tr>
+            <th>Slug</th>
+            <td><code>{{ service.slug }}</code></td>
+        </tr>
+        <tr>
+            <th>Created</th>
+            <td>{{ service.created_at }}</td>
+        </tr>
+        {% if service.description %}
+        <tr>
+            <th>Description</th>
+            <td>{{ service.description }}</td>
+        </tr>
+        {% endif %}
+    </table>
+</div>
+{% endblock %}{% endraw %}

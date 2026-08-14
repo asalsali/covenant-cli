@@ -1,0 +1,52 @@
+"""{{ project_name }} -- Pydantic request/response models."""
+
+from __future__ import annotations
+
+from pydantic import BaseModel
+
+
+class ServiceOut(BaseModel):
+    """A registered governed service."""
+
+    name: str
+    slug: str
+    sdk: str
+    status: str
+    runs: int
+    success_rate: float | None = None
+
+
+class RunOut(BaseModel):
+    """A single service run with its exit report."""
+
+    id: str
+    service: str
+    status: str
+    started_at: str
+    duration_seconds: float | None = None
+    tokens_used: int = 0
+    exit_report: dict | None = None
+
+
+class TriggerRequest(BaseModel):
+    """Request body for triggering a service run."""
+
+    input_data: dict | None = None
+
+
+class TriggerResponse(BaseModel):
+    """Response after triggering a service run."""
+
+    run_id: str
+    status: str
+
+
+class HealthOut(BaseModel):
+    """Governance health status."""
+
+    project: str
+    governance: str
+    services: int
+    total_runs: int
+    success_rate: float
+    last_consolidation: str | None = None

@@ -1,0 +1,83 @@
+"""{{ project_name }} -- background task runner.
+
+Bridges Django and agent services. Runs service managers in background
+threads so the dashboard remains responsive.
+"""
+
+import asyncio
+import importlib
+import inspect
+import json
+import threading
+from datetime import datetime, timezone
+from pathlib import Path
+
+from django.utils import timezone as dj_tz
+
+
+def run_service_background(run_id: int):
+    """Run a service manager in a background thread."""
+
+    def _execute():
+        # Import inside thread to avoid AppRegistryNotReady
+        from core.models import AgentRun
+
+        run = AgentRun.objects.get(id=run_id)
+        run.status = "running"
+        run.save()
+
+        start = datetime.now(timezone.utc)
+        try:
+            # Import the service manager module
+            module = importlib.import_module(
+                f"services.{run.service.slug}.manager"
+            )
+
+            # Find the Manager class in the module
+            manager_class = None
+            for name, obj in inspect.getmembers(module, inspect.isclass):
+                if name.endswith("Manager") or name.endswith("Service"):
+                    manager_class = obj
+                    break
+
+            if manager_class is None:
+                raise ImportError(
+                    f"No Manager class found in services.{run.service.slug}.manager"
+                )
+
+            manager = manager_class()
+            result = asyncio.run(manager.run(run.input_data or {}))
+
+            run.status = "completed"
+            run.exit_report = (
+                result if isinstance(result, dict) else {"output": str(result)}
+            )
+        except Exception as e:
+            run.status = "failed"
+            run.exit_report = {
+                "error": str(e),
+                "what_failed": [str(e)],
+            }
+
+        run.completed_at = dj_tz.now()
+        run.duration_seconds = (
+            datetime.now(timezone.utc) - start
+        ).total_seconds()
+
+        # Extract usage from exit report if available
+        usage = (run.exit_report or {}).get("usage", {})
+        run.tokens_used = usage.get("input_tokens", 0) + usage.get(
+            "output_tokens", 0
+        )
+        run.cost = usage.get("total_cost", 0.0)
+        run.save()
+
+        # Write to filesystem for CLI compatibility
+        memory_dir = Path("memory/inheritance")
+        memory_dir.mkdir(parents=True, exist_ok=True)
+        report_path = memory_dir / (
+            f"{run.service.slug}-{start.strftime('%Y%m%dT%H%M%S')}.json"
+        )
+        report_path.write_text(json.dumps(run.exit_report, indent=2))
+
+    threading.Thread(target=_execute, daemon=True).start()

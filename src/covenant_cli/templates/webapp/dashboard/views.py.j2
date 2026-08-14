@@ -1,0 +1,51 @@
+"""{{ project_name }} -- dashboard views."""
+
+from django.http import HttpResponseNotAllowed
+from django.shortcuts import get_object_or_404, redirect, render
+
+from core.models import AgentRun, Service
+from dashboard.runner import run_service_background
+
+
+def index(request):
+    """List all services with summary stats."""
+    services = Service.objects.all()
+    recent_runs = AgentRun.objects.select_related("service")[:5]
+    return render(
+        request,
+        "dashboard/index.html",
+        {"services": services, "recent_runs": recent_runs},
+    )
+
+
+def service_detail(request, slug):
+    """Show a single service with its run history."""
+    service = get_object_or_404(Service, slug=slug)
+    runs = service.runs.all()[:25]
+    return render(
+        request,
+        "dashboard/service_detail.html",
+        {"service": service, "runs": runs},
+    )
+
+
+def run_detail(request, slug, run_id):
+    """Show a single run with its full exit report."""
+    service = get_object_or_404(Service, slug=slug)
+    run = get_object_or_404(AgentRun, id=run_id, service=service)
+    return render(
+        request,
+        "dashboard/run_detail.html",
+        {"service": service, "run": run},
+    )
+
+
+def trigger_run(request, slug):
+    """Trigger a new run for a service (POST only)."""
+    if request.method != "POST":
+        return HttpResponseNotAllowed(["POST"])
+
+    service = get_object_or_404(Service, slug=slug)
+    run = AgentRun.objects.create(service=service)
+    run_service_background(run.id)
+    return redirect("dashboard:service_detail", slug=service.slug)

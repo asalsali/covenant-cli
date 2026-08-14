@@ -1,0 +1,105 @@
+{% raw %}{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Services</h1>
+    <p class="subtitle">Governed agent services for {% endraw %}{{ project_name }}{% raw %}</p>
+</div>
+
+<div class="card-grid">
+    {% for service in services %}
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">
+                <a href="{% url 'dashboard:service_detail' service.slug %}">{{ service.name }}</a>
+            </h2>
+            <span class="badge badge-{{ service.status }}">{{ service.get_status_display }}</span>
+        </div>
+        <div class="card-body">
+            <div class="stat-row">
+                <span class="stat-label">SDK</span>
+                <span class="stat-value tag">{{ service.sdk }}</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Runs</span>
+                <span class="stat-value">{{ service.runs.count }}</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Success Rate</span>
+                <span class="stat-value">
+                    {% if service.success_rate is not None %}
+                        {{ service.success_rate }}%
+                    {% else %}
+                        &mdash;
+                    {% endif %}
+                </span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Total Tokens</span>
+                <span class="stat-value">{{ service.total_tokens|default:"0" }}</span>
+            </div>
+            {% with last=service.last_run %}
+            {% if last %}
+            <div class="stat-row">
+                <span class="stat-label">Last Run</span>
+                <span class="stat-value">{{ last.started_at|timesince }} ago</span>
+            </div>
+            {% endif %}
+            {% endwith %}
+        </div>
+        <div class="card-footer">
+            <form method="post" action="{% url 'dashboard:trigger_run' service.slug %}">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-primary">Run</button>
+            </form>
+            <a href="{% url 'dashboard:service_detail' service.slug %}" class="btn btn-secondary">Details</a>
+        </div>
+    </div>
+    {% empty %}
+    <div class="empty-state">
+        <p>No services registered yet.</p>
+        <p class="hint">Use <code>covenant add-service &lt;name&gt;</code> to create one, then register it in Django admin.</p>
+    </div>
+    {% endfor %}
+</div>
+
+{% if recent_runs %}
+<div class="section">
+    <h2>Recent Runs</h2>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Service</th>
+                <th>Status</th>
+                <th>Started</th>
+                <th>Duration</th>
+                <th>Tokens</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for run in recent_runs %}
+            <tr>
+                <td>
+                    <a href="{% url 'dashboard:run_detail' run.service.slug run.id %}">
+                        {{ run.service.name }}
+                    </a>
+                </td>
+                <td><span class="badge {{ run.status_color }}">{{ run.get_status_display }}</span></td>
+                <td>{{ run.started_at|timesince }} ago</td>
+                <td>
+                    {% if run.duration_seconds is not None %}
+                        {{ run.duration_seconds|floatformat:1 }}s
+                    {% else %}
+                        &mdash;
+                    {% endif %}
+                </td>
+                <td>{{ run.tokens_used }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}{% endraw %}

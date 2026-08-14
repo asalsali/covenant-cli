@@ -1,0 +1,56 @@
+"""{{ project_name }} -- File-based storage layer.
+
+This module provides helper functions for reading the governance files
+that the CLI also uses: registry/agents.json and memory/inheritance/*.json.
+No SQL database -- the API reads the same files the CLI writes.
+"""
+
+import json
+from pathlib import Path
+
+
+REGISTRY_PATH = Path("registry/agents.json")
+INHERITANCE_DIR = Path("memory/inheritance")
+MEMOS_DIR = Path("memory/memos")
+
+
+def load_registry() -> dict:
+    """Load the project registry from disk."""
+    if not REGISTRY_PATH.exists():
+        return {"agents": [], "services": [], "lastUpdated": None}
+    try:
+        return json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {"agents": [], "services": [], "lastUpdated": None}
+
+
+def save_registry(data: dict) -> None:
+    """Write the project registry back to disk."""
+    REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    REGISTRY_PATH.write_text(
+        json.dumps(data, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def load_exit_reports() -> list[dict]:
+    """Load all exit reports from memory/inheritance/, newest first."""
+    if not INHERITANCE_DIR.exists():
+        return []
+
+    reports = []
+    for f in sorted(INHERITANCE_DIR.glob("*.json"), reverse=True):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            data["_source_file"] = f.name
+            reports.append(data)
+        except (json.JSONDecodeError, OSError):
+            continue
+    return reports
+
+
+def write_exit_report(run_id: str, report: dict) -> Path:
+    """Write an exit report to memory/inheritance/."""
+    INHERITANCE_DIR.mkdir(parents=True, exist_ok=True)
+    path = INHERITANCE_DIR / f"{run_id}-exit_report.json"
+    path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    return path

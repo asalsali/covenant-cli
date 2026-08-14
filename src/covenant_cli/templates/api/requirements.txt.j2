@@ -1,0 +1,7 @@
+fastapi>=0.110
+uvicorn>=0.29
+python-dotenv>=1.0
+{% if sdk == "openai" %}openai-agents>=0.5{% endif %}
+{% if sdk == "crewai" %}crewai>=0.100{% endif %}
+{% if sdk == "langgraph" %}langgraph>=0.3
+langchain-openai>=0.3{% endif %}

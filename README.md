@@ -25,9 +25,18 @@ The difference between an agent that works once and an agent you can trust is go
 ```bash
 pip install covenant-cli
 
-# Create a governed project
+# Create a governed project (default scaffold)
 covenant init my-project
 cd my-project
+
+# Or create a FastAPI governed API
+covenant init my-api --template api
+cd my-api
+pip install -r requirements.txt
+uvicorn main:app --reload
+
+# Or create a Django governed webapp
+covenant init my-webapp --template webapp
 
 # Add a governed service
 covenant add-service research-agent
@@ -40,7 +49,7 @@ covenant status
 
 | Command | Description |
 |---------|-------------|
-| `covenant init <name>` | Create a new governed project with GOVERNANCE.md, registry, memory, and convention rules |
+| `covenant init <name> [--template api\|webapp]` | Create a new governed project (default, FastAPI API, or Django webapp) |
 | `covenant add-service <name>` | Add a governed service with manager, agents, typed schemas, and exit reports |
 | `covenant status` | Show project health: services, recent exit reports, warnings |
 | `covenant remember [query]` | Search exit reports, memos, and consolidated summaries by keyword |
@@ -94,7 +103,47 @@ my-project/
         └── tools.py           # Shared tools
 ```
 
-## What's New in v0.5.0
+## Application Templates
+
+`covenant init` supports three project templates via the `--template` flag:
+
+| Template | Command | What You Get |
+|----------|---------|-------------|
+| **default** | `covenant init my-project` | CLI project with `src/main.py`, governance scaffold, services directory |
+| **api** | `covenant init my-api --template api` | FastAPI app with REST endpoints for governed agent services (`/services`, `/runs`, `/health`) |
+| **webapp** | `covenant init my-webapp --template webapp` | Django webapp with dashboard and governance UI |
+
+All templates include the same governance foundation: `GOVERNANCE.md`, `registry/agents.json`, `memory/` directories, and IDE convention rules. The template determines the application layer on top.
+
+### API Template
+
+The API template generates a working FastAPI application:
+
+```
+my-api/
+├── main.py                # FastAPI entry point
+├── requirements.txt       # Python dependencies
+├── runner.py              # Background task runner
+├── routers/
+│   ├── services.py        # Service CRUD + trigger endpoints
+│   ├── runs.py            # Run detail + exit report endpoints
+│   └── health.py          # Governance health check
+├── models/
+│   ├── schemas.py         # Pydantic request/response models
+│   └── database.py        # File-based storage (reads same files as CLI)
+├── GOVERNANCE.md
+├── registry/agents.json
+└── memory/
+```
+
+No database required -- the API reads the same governance files the CLI does.
+
+## What's New in v0.6.0
+
+- **Application templates** -- `covenant init --template api` scaffolds a FastAPI governed agent API; `--template webapp` scaffolds a Django webapp
+- **Three templates** -- default (CLI), api (FastAPI), webapp (Django) -- all sharing the same governance foundation
+
+### v0.5.0
 
 - **`covenant doctor`** -- validate project environment health: Python version, SDK, API keys, registry integrity, governance, memory directories, IDE rules, and service scaffolding
 
@@ -106,6 +155,19 @@ my-project/
 - **`covenant remember`** -- now searches memos and consolidated summaries (compiled-truth boost)
 - **Status dashboard** -- unread memo count, last consolidation date, token totals per service
 - **3 new governance rules** -- track usage, communicate via memos, consolidate regularly
+
+## Roadmap
+
+covenant-cli is heading toward runtime governance and intelligence. See [ROADMAP.md](ROADMAP.md) for the full plan.
+
+**Coming next:**
+- `covenant run <service>` -- execute services with automatic exit reports and usage capture
+- `covenant watch` -- live monitoring with failure context from prior runs
+- Baseline tracking -- detect regression before it becomes a production incident
+- `covenant suggest` -- evidence-based improvement recommendations from your project's own history
+- Plugin system -- make any agent framework governable
+
+Six detailed user journeys and the full phase-by-phase plan are in the roadmap.
 
 ## Credits
 

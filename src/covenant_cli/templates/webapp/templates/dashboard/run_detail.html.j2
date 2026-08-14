@@ -1,0 +1,129 @@
+{% raw %}{% extends "base.html" %}
+
+{% block title %}Run #{{ run.id }} | {{ service.name }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="breadcrumb">
+        <a href="{% url 'dashboard:index' %}">Dashboard</a>
+        &rsaquo; <a href="{% url 'dashboard:service_detail' service.slug %}">{{ service.name }}</a>
+        &rsaquo; Run #{{ run.id }}
+    </div>
+    <h1>Run #{{ run.id }}</h1>
+    <span class="badge {{ run.status_color }}">{{ run.get_status_display }}</span>
+</div>
+
+<div class="stats-bar">
+    <div class="stat-box">
+        <span class="stat-number">{{ run.started_at|date:"N j, Y H:i" }}</span>
+        <span class="stat-label">Started</span>
+    </div>
+    <div class="stat-box">
+        <span class="stat-number">
+            {% if run.duration_seconds is not None %}
+                {{ run.duration_seconds|floatformat:1 }}s
+            {% else %}
+                &mdash;
+            {% endif %}
+        </span>
+        <span class="stat-label">Duration</span>
+    </div>
+    <div class="stat-box">
+        <span class="stat-number">{{ run.tokens_used }}</span>
+        <span class="stat-label">Tokens</span>
+    </div>
+    <div class="stat-box">
+        <span class="stat-number">${{ run.cost|floatformat:4 }}</span>
+        <span class="stat-label">Cost</span>
+    </div>
+</div>
+
+{% if run.exit_report %}
+<div class="section">
+    <h2>Exit Report</h2>
+
+    {% if run.exit_report.what_worked %}
+    <div class="report-section report-success">
+        <h3>What Worked</h3>
+        {% if run.exit_report.what_worked|length > 0 %}
+            <ul>
+            {% for item in run.exit_report.what_worked %}
+                <li>{{ item }}</li>
+            {% endfor %}
+            </ul>
+        {% else %}
+            <p>{{ run.exit_report.what_worked }}</p>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if run.exit_report.what_failed %}
+    <div class="report-section report-failure">
+        <h3>What Failed</h3>
+        {% if run.exit_report.what_failed|length > 0 %}
+            <ul>
+            {% for item in run.exit_report.what_failed %}
+                <li>{{ item }}</li>
+            {% endfor %}
+            </ul>
+        {% else %}
+            <p>{{ run.exit_report.what_failed }}</p>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if run.exit_report.recommendations %}
+    <div class="report-section report-recommendations">
+        <h3>Recommendations</h3>
+        {% if run.exit_report.recommendations|length > 0 %}
+            <ul>
+            {% for item in run.exit_report.recommendations %}
+                <li>{{ item }}</li>
+            {% endfor %}
+            </ul>
+        {% else %}
+            <p>{{ run.exit_report.recommendations }}</p>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if run.exit_report.output %}
+    <div class="report-section">
+        <h3>Output</h3>
+        <pre class="code-block">{{ run.exit_report.output }}</pre>
+    </div>
+    {% endif %}
+
+    {% if run.exit_report.error %}
+    <div class="report-section report-failure">
+        <h3>Error</h3>
+        <pre class="code-block">{{ run.exit_report.error }}</pre>
+    </div>
+    {% endif %}
+
+    <details class="raw-report">
+        <summary>Raw Exit Report (JSON)</summary>
+        <pre class="code-block">{{ run.exit_report|pprint }}</pre>
+    </details>
+</div>
+{% else %}
+<div class="section">
+    <div class="empty-state">
+        <p>
+            {% if run.status == "pending" or run.status == "running" %}
+                Run is {{ run.get_status_display|lower }}. Exit report will appear when complete.
+            {% else %}
+                No exit report available.
+            {% endif %}
+        </p>
+    </div>
+</div>
+{% endif %}
+
+{% if run.input_data %}
+<div class="section">
+    <h2>Input Data</h2>
+    <pre class="code-block">{{ run.input_data|pprint }}</pre>
+</div>
+{% endif %}
+{% endblock %}{% endraw %}

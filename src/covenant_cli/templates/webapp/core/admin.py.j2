@@ -1,0 +1,26 @@
+"""{{ project_name }} -- admin configuration."""
+
+from django.contrib import admin
+
+from core.models import AgentRun, Service
+
+
+@admin.register(Service)
+class ServiceAdmin(admin.ModelAdmin):
+    list_display = ["name", "slug", "sdk", "status", "created_at"]
+    list_filter = ["status", "sdk"]
+    search_fields = ["name", "slug"]
+    prepopulated_fields = {"slug": ("name",)}
+
+
+@admin.register(AgentRun)
+class AgentRunAdmin(admin.ModelAdmin):
+    list_display = [
+        "service",
+        "status",
+        "started_at",
+        "duration_seconds",
+        "tokens_used",
+    ]
+    list_filter = ["status", "service"]
+    readonly_fields = ["exit_report"]

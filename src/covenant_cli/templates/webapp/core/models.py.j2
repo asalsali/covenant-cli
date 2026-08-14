@@ -1,0 +1,94 @@
+"""{{ project_name }} -- core models for governed agent services."""
+
+from django.db import models
+
+
+class Service(models.Model):
+    """A registered agent service."""
+
+    name = models.CharField(max_length=200)
+    slug = models.SlugField(max_length=200, unique=True)
+    description = models.TextField(blank=True, default="")
+    sdk = models.CharField(max_length=50, default="{{ sdk or 'openai' }}")
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ("registered", "Registered"),
+            ("active", "Active"),
+            ("paused", "Paused"),
+            ("archived", "Archived"),
+        ],
+        default="registered",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+    def success_rate(self):
+        """Return completion percentage, or None if no runs."""
+        total = self.runs.count()
+        if total == 0:
+            return None
+        return round(
+            self.runs.filter(status="completed").count() / total * 100, 1
+        )
+
+    def total_tokens(self):
+        """Return total tokens used across all runs."""
+        from django.db.models import Sum
+
+        return self.runs.aggregate(Sum("tokens_used"))["tokens_used__sum"] or 0
+
+    def total_cost(self):
+        """Return total cost across all runs."""
+        from django.db.models import Sum
+
+        return self.runs.aggregate(Sum("cost"))["cost__sum"] or 0.0
+
+    def last_run(self):
+        """Return the most recent run, or None."""
+        return self.runs.first()
+
+
+class AgentRun(models.Model):
+    """A single execution of an agent service."""
+
+    service = models.ForeignKey(
+        Service, on_delete=models.CASCADE, related_name="runs"
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ("pending", "Pending"),
+            ("running", "Running"),
+            ("completed", "Completed"),
+            ("failed", "Failed"),
+        ],
+        default="pending",
+    )
+    started_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    duration_seconds = models.FloatField(null=True, blank=True)
+    tokens_used = models.IntegerField(default=0)
+    cost = models.FloatField(default=0.0)
+    input_data = models.JSONField(null=True, blank=True)
+    exit_report = models.JSONField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-started_at"]
+
+    def __str__(self):
+        return f"{self.service.name} #{self.pk} ({self.status})"
+
+    def status_color(self):
+        """Return a CSS class name for the status badge."""
+        return {
+            "pending": "badge-pending",
+            "running": "badge-running",
+            "completed": "badge-completed",
+            "failed": "badge-failed",
+        }.get(self.status, "badge-pending")

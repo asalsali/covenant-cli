@@ -1,0 +1,18 @@
+"""{{ project_name }} -- Governed Agent API"""
+
+from fastapi import FastAPI
+from dotenv import load_dotenv
+
+load_dotenv()
+
+from routers import services, runs, health
+
+app = FastAPI(
+    title="{{ project_name }}",
+    description="Governed agent services API",
+    version="0.1.0",
+)
+
+app.include_router(health.router, tags=["health"])
+app.include_router(services.router, prefix="/services", tags=["services"])
+app.include_router(runs.router, prefix="/runs", tags=["runs"])
