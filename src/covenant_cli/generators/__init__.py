@@ -524,8 +524,11 @@ def main():
         print("  Copy .env.example to .env and add your key.")
         print()
 
-    # Run Django migrations
-    print("  Running database migrations...")
+    # Create and run Django migrations
+    print("  Creating database migrations...")
+    run([sys.executable, "manage.py", "makemigrations", "core"])
+    print()
+    print("  Applying migrations...")
     run([sys.executable, "manage.py", "migrate"])
     print()
 
