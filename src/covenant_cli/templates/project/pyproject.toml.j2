@@ -9,9 +9,19 @@ description = "A governed agent project."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "pydantic>=2.0",
+{% if sdk == "openai" %}
+    "openai>=1.0",
+    "openai-agents>=0.5",
+{% elif sdk == "crewai" %}
+    "crewai>=0.100",
+{% elif sdk == "langgraph" %}
+    "langgraph>=0.3",
+    "langchain-openai>=0.3",
+{% else %}
     "openai>=1.0",
     "openai-agents>=0.1",
-    "pydantic>=2.0",
+{% endif %}
 ]
 
 [tool.hatch.build.targets.wheel]

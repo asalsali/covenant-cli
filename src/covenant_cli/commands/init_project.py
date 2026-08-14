@@ -10,6 +10,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from covenant_cli.templates import get_project_template_dir
 from covenant_cli.rules import get_rules_dir
+from covenant_cli.adapters import list_sdks, get_sdk_info
 from covenant_cli.theme import (
     console,
     print_banner,
@@ -40,7 +41,13 @@ def _write_file(path: Path, content: str, tree) -> None:
 
 @click.command()
 @click.argument("name")
-def init_command(name: str):
+@click.option(
+    "--sdk",
+    type=click.Choice(list_sdks()),
+    default=None,
+    help="Default SDK for services (openai, crewai, langgraph).",
+)
+def init_command(name: str, sdk: str | None):
     """Create a new governed project.
 
     NAME is the project directory name (e.g., my-agent-project).
@@ -58,6 +65,7 @@ def init_command(name: str):
         "project_name": name,
         "project_slug": name.replace("-", "_").replace(" ", "_").lower(),
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "sdk": sdk,
     }
 
     # Set up Jinja2
@@ -107,6 +115,8 @@ def init_command(name: str):
         "lastUpdated": None,
         "governanceHash": governance_hash,
     }
+    if sdk:
+        registry_data["defaultSdk"] = sdk
     (registry_dir / "agents.json").write_text(
         json.dumps(registry_data, indent=2) + "\n", encoding="utf-8"
     )
@@ -180,6 +190,13 @@ def init_command(name: str):
         console.print(f"  [{GREEN}]All files created successfully.[/]")
         console.print()
 
+    sdk_info = get_sdk_info(sdk) if sdk else None
+    sdk_line = (
+        f"  [{INK_LIGHT}]SDK: {sdk_info['label']}[/]\n\n"
+        if sdk_info
+        else f"  [{INK_LIGHT}]Optional: pip install openai-agents[/]\n\n"
+    )
+
     console.print(
         branded_panel(
             f"[bold {GOLD}]Project created.[/]\n\n"
@@ -187,8 +204,8 @@ def init_command(name: str):
             f"  [{INK_LIGHT}]pip install -e .[/]\n"
             f"  [{INK_LIGHT}]covenant add-service my-first-agent[/]\n"
             f"  [{INK_LIGHT}]covenant status[/]\n\n"
-            f"  [{INK_LIGHT}]Optional: pip install openai-agents[/]\n\n"
-            f"Read [bold]GOVERNANCE.md[/] [{INK_LIGHT}]-- it's the law.[/]",
+            + sdk_line
+            + f"Read [bold]GOVERNANCE.md[/] [{INK_LIGHT}]-- it's the law.[/]",
             title="Next Steps",
         )
     )

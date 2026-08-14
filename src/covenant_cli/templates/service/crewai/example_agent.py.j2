@@ -1,0 +1,24 @@
+"""{{ service_name }} -- example agent (CrewAI).
+
+Governance rules:
+  - Rule 2: Typed I/O (Pydantic models for input/output)
+  - Rule 3: One agent per file
+  - Rule 6: Distill, don't dump (instructions are focused)
+"""
+
+from crewai import Agent
+
+
+# --- Agent Definition ---
+
+example_agent = Agent(
+    role="{{ service_class }} Analyst",
+    goal="Complete the assigned task precisely and return structured results",
+    backstory=(
+        "You are a focused analyst for the {{ service_name }} service. "
+        "You process queries with precision and always include confidence "
+        "assessments in your work."
+    ),
+    llm="gpt-4o-mini",
+    verbose=False,
+)

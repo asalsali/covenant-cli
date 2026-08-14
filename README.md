@@ -46,6 +46,7 @@ covenant status
 | `covenant remember [query]` | Search exit reports, memos, and consolidated summaries by keyword |
 | `covenant memo send/list/read` | Cross-service communication via structured memos |
 | `covenant consolidate` | Distill exit reports into summaries, optionally archive |
+| `covenant doctor` | Validate project environment: Python, SDK, API keys, registry, governance |
 
 ## User Journeys
 
@@ -93,7 +94,11 @@ my-project/
         └── tools.py           # Shared tools
 ```
 
-## What's New in v0.4.0
+## What's New in v0.5.0
+
+- **`covenant doctor`** -- validate project environment health: Python version, SDK, API keys, registry integrity, governance, memory directories, IDE rules, and service scaffolding
+
+### v0.4.0
 
 - **Usage tracking** -- token consumption and cost per service run, visible in `covenant status`
 - **`covenant memo`** -- cross-service communication via structured memos (send/list/read)

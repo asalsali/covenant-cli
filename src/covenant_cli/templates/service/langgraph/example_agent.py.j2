@@ -1,0 +1,52 @@
+"""{{ service_name }} -- example agent node (LangGraph).
+
+Governance rules:
+  - Rule 2: Typed I/O (Pydantic models for input/output)
+  - Rule 3: One agent per file
+  - Rule 6: Distill, don't dump (instructions are focused)
+"""
+
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, SystemMessage
+
+
+# --- Agent Instructions ---
+
+INSTRUCTIONS = """You are a focused agent for the {{ service_name }} service.
+
+Your mandate: Process the user's query and return a structured result.
+
+Rules:
+- Be specific and concise
+- If uncertain, say so explicitly
+"""
+
+llm = ChatOpenAI(model="gpt-4o-mini")
+
+
+def run_agent(input_text: str) -> dict:
+    """Execute the agent and return result with usage.
+
+    Args:
+        input_text: The query or task description.
+
+    Returns:
+        Dict with 'output' (str) and 'usage' (token counts).
+    """
+    messages = [
+        SystemMessage(content=INSTRUCTIONS),
+        HumanMessage(content=input_text),
+    ]
+    response = llm.invoke(messages)
+
+    # Extract usage from response metadata
+    meta = getattr(response, "response_metadata", {})
+    usage = meta.get("token_usage", {})
+
+    return {
+        "output": response.content,
+        "usage": {
+            "input_tokens": usage.get("prompt_tokens", 0),
+            "output_tokens": usage.get("completion_tokens", 0),
+        },
+    }

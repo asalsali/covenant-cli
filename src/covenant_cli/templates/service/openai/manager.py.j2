@@ -1,0 +1,136 @@
+"""{{ service_name }} -- service manager (OpenAI Agents SDK).
+
+The manager orchestrates agents sequentially and writes exit reports.
+See GOVERNANCE.md rules 4 (manager orchestration) and 5 (exit reports).
+
+SDK: OpenAI Agents SDK (openai-agents)
+"""
+
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from agents import Runner
+
+
+class {{ service_class }}Manager:
+    """Orchestrator for the {{ service_name }} service.
+
+    Lifecycle:
+        1. Plan -- read inheritance, prepare context
+        2. Execute -- run agents via OpenAI Agents SDK Runner
+        3. Finalize -- collect results
+        4. Report -- write exit report to memory/inheritance/
+    """
+
+    def __init__(self):
+        self.service_name = "{{ service_slug }}"
+        self.memory_dir = Path("memory/inheritance")
+        self.memory_dir.mkdir(parents=True, exist_ok=True)
+        self._usage = {"input_tokens": 0, "output_tokens": 0, "total_cost": 0.0}
+
+    def track_usage(self, input_tokens: int = 0, output_tokens: int = 0, cost: float = 0.0):
+        """Track token usage for this run. Call after each agent execution."""
+        self._usage["input_tokens"] += input_tokens
+        self._usage["output_tokens"] += output_tokens
+        self._usage["total_cost"] += cost
+
+    async def run(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Run the service pipeline.
+
+        Args:
+            request: The input request. Define a Pydantic model
+                     in schemas/types.py for production use.
+
+        Returns:
+            Result dictionary. Define a Pydantic model for production use.
+        """
+        start_time = datetime.now(timezone.utc)
+        what_worked: list[str] = []
+        what_failed: list[str] = []
+        result: dict[str, Any] = {}
+
+        try:
+            # Phase 1: Plan
+            # Read prior exit reports for learnings
+            inheritance = self._read_inheritance()
+            if inheritance:
+                what_worked.append(f"Read {len(inheritance)} prior exit reports")
+
+            # Phase 2: Execute
+            from .agents.example_agent import example_agent
+
+            agent_result = await Runner.run(
+                example_agent,
+                input=request.get("query", ""),
+            )
+            result["output"] = agent_result.final_output
+
+            # Track usage from the OpenAI Agents SDK result
+            usage = getattr(agent_result, "raw_responses", [])
+            for response in usage:
+                resp_usage = getattr(response, "usage", None)
+                if resp_usage:
+                    self.track_usage(
+                        input_tokens=getattr(resp_usage, "input_tokens", 0),
+                        output_tokens=getattr(resp_usage, "output_tokens", 0),
+                    )
+
+            result["status"] = "completed"
+            what_worked.append("Pipeline completed")
+
+        except Exception as e:
+            result["status"] = "failed"
+            result["error"] = str(e)
+            what_failed.append(f"Pipeline failed: {e}")
+
+        # Phase 4: Exit report (always runs)
+        self._write_exit_report(result, start_time, what_worked, what_failed)
+
+        return result
+
+    def _read_inheritance(self) -> list[dict]:
+        """Read prior exit reports for this service.
+
+        Governance rule 7: Check inheritance first.
+        """
+        reports = []
+        for path in sorted(self.memory_dir.glob(f"{self.service_name}-*.json")):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                reports.append(data)
+            except (json.JSONDecodeError, OSError):
+                continue
+        return reports
+
+    def _write_exit_report(
+        self,
+        result: dict[str, Any],
+        start_time: datetime,
+        what_worked: list[str],
+        what_failed: list[str],
+    ) -> None:
+        """Write an exit report to memory/inheritance/.
+
+        Governance rule 5: Exit reports are mandatory.
+        """
+        now = datetime.now(timezone.utc)
+        duration = (now - start_time).total_seconds()
+
+        report = {
+            "service": self.service_name,
+            "timestamp": now.isoformat(),
+            "duration_seconds": round(duration, 2),
+            "status": result.get("status", "unknown"),
+            "what_worked": what_worked,
+            "what_failed": what_failed,
+            "recommendations": [],
+            "usage": self._usage,
+        }
+
+        filename = f"{self.service_name}-{now.strftime('%Y%m%dT%H%M%S')}.json"
+        report_path = self.memory_dir / filename
+        report_path.write_text(
+            json.dumps(report, indent=2) + "\n", encoding="utf-8"
+        )

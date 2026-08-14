@@ -6,8 +6,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import click
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, ChoiceLoader
 
+from covenant_cli.adapters import list_sdks, get_sdk_info
 from covenant_cli.templates import get_service_template_dir
 from covenant_cli.theme import (
     console,
@@ -36,7 +37,24 @@ def _find_project_root() -> Path | None:
     return None
 
 
-def _update_registry(project_root: Path, service_name: str, service_slug: str) -> None:
+def _resolve_sdk(explicit_sdk: str | None, project_root: Path) -> str | None:
+    """Resolve the SDK to use: explicit flag > project default > None."""
+    if explicit_sdk:
+        return explicit_sdk
+    registry_path = project_root / "registry" / "agents.json"
+    try:
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        return registry.get("defaultSdk")
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _update_registry(
+    project_root: Path,
+    service_name: str,
+    service_slug: str,
+    sdk: str | None = None,
+) -> None:
     """Register the new service in registry/agents.json."""
     registry_path = project_root / "registry" / "agents.json"
     registry = json.loads(registry_path.read_text(encoding="utf-8"))
@@ -49,6 +67,8 @@ def _update_registry(project_root: Path, service_name: str, service_slug: str) -
         "lastRun": None,
         "status": "registered",
     }
+    if sdk:
+        service_entry["sdk"] = sdk
     registry["services"].append(service_entry)
     registry["lastUpdated"] = datetime.now(timezone.utc).isoformat()
 
@@ -57,7 +77,13 @@ def _update_registry(project_root: Path, service_name: str, service_slug: str) -
 
 @click.command()
 @click.argument("name")
-def add_service_command(name: str):
+@click.option(
+    "--sdk",
+    type=click.Choice(list_sdks()),
+    default=None,
+    help="SDK for this service (openai, crewai, langgraph). Falls back to project default.",
+)
+def add_service_command(name: str, sdk: str | None):
     """Add a governed service to the project.
 
     NAME is the service name (e.g., research-agent). Will be normalized
@@ -70,6 +96,9 @@ def add_service_command(name: str):
             "Run [bold]covenant init <name>[/bold] first."
         )
         raise SystemExit(1)
+
+    # Resolve SDK: explicit flag > project default > None (generic)
+    resolved_sdk = _resolve_sdk(sdk, project_root)
 
     service_slug = _normalize_name(name)
     service_class = "".join(word.capitalize() for word in service_slug.split("_"))
@@ -87,10 +116,19 @@ def add_service_command(name: str):
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    # Set up Jinja2
+    # Set up Jinja2 -- SDK-specific templates take priority over generic
     template_dir = get_service_template_dir()
+    if resolved_sdk:
+        sdk_template_dir = template_dir / resolved_sdk
+        # SDK dir first in search path, generic dir as fallback
+        loader = ChoiceLoader([
+            FileSystemLoader(str(sdk_template_dir)),
+            FileSystemLoader(str(template_dir)),
+        ])
+    else:
+        loader = FileSystemLoader(str(template_dir))
     env = Environment(
-        loader=FileSystemLoader(str(template_dir)),
+        loader=loader,
         keep_trailing_newline=True,
     )
 
@@ -151,16 +189,23 @@ def add_service_command(name: str):
     tree.add(file_added("memory/README.md"))
 
     # --- Update registry ---
-    _update_registry(project_root, name, service_slug)
+    _update_registry(project_root, name, service_slug, sdk=resolved_sdk)
 
     # --- Output ---
     console.print()
     console.print(tree)
     console.print()
+
+    sdk_note = ""
+    if resolved_sdk:
+        sdk_info = get_sdk_info(resolved_sdk)
+        sdk_note = f"  [{INK_LIGHT}]SDK: {sdk_info['label']}[/]\n\n"
+
     console.print(
         branded_panel(
             f"[bold {GOLD}]Service '{service_slug}' registered.[/]\n\n"
-            f"  [{INK_LIGHT}]1. Edit services/{service_slug}/agents/example_agent.py[/]\n"
+            + sdk_note
+            + f"  [{INK_LIGHT}]1. Edit services/{service_slug}/agents/example_agent.py[/]\n"
             f"  [{INK_LIGHT}]2. Define types in services/{service_slug}/schemas/types.py[/]\n"
             f"  [{INK_LIGHT}]3. Wire agents in services/{service_slug}/manager.py[/]\n"
             f"  [{INK_LIGHT}]4. Run: covenant status[/]\n\n"
