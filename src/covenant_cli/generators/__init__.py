@@ -125,11 +125,16 @@ def generate_schemas_file(service_spec: dict) -> str:
         lines.append("")
         lines.append("")
 
-        # Output model
+        # Output model — flatten complex types (dict, nested) to str
+        # for reliable LLM JSON parsing
         lines.append(f"class {agent_class}Output(BaseModel):")
         lines.append(f'    """Output from {agent["role"]}."""')
         for field in agent["output_fields"]:
-            lines.append(_pydantic_field(field))
+            simplified = dict(field)
+            ftype = simplified.get("type", "str")
+            if "dict" in ftype.lower():
+                simplified["type"] = "str"
+            lines.append(_pydantic_field(simplified))
         lines.append("")
         lines.append("")
 
@@ -181,8 +186,7 @@ def generate_agent_file(agent_spec: dict, service_spec: dict) -> str:
         "  - Rule 6: Distill, don't dump (instructions are focused)",
         '"""',
         "",
-        "from agents import Agent, AgentOutputSchema",
-        f"from ..schemas.types import {agent_class}Input, {agent_class}Output",
+        "from agents import Agent",
     ]
 
     if tool_imports:
@@ -198,7 +202,6 @@ def generate_agent_file(agent_spec: dict, service_spec: dict) -> str:
         f'    name="{slug}_{agent_spec["name"]}",',
         f"    instructions=INSTRUCTIONS,",
         f'    model="gpt-4o-mini",',
-        f"    output_type=AgentOutputSchema({agent_class}Output, strict_json_schema=False),",
     ])
 
     if tool_list:
