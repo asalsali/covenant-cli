@@ -230,12 +230,52 @@ def _display_report(report: dict) -> None:
         console.print(f"    [{GOLD}]Recommends:[/] [{INK_LIGHT}]--[/]")
 
 
+def _aggregate_failure_patterns(reports: list[dict]) -> list[dict]:
+    """Aggregate what_failed entries across all reports into frequency-ranked patterns.
+
+    Returns top 15 patterns sorted by count descending.
+    Each: {"pattern": str, "count": int, "lastSeen": str, "recurring": bool}
+    """
+    from collections import Counter
+
+    counts: Counter = Counter()
+    last_seen: dict[str, str] = {}
+
+    for report in reports:
+        wf = report.get("what_failed", [])
+        ts = report.get("timestamp", "")
+        entries = []
+        if isinstance(wf, list):
+            entries = [str(f).strip().lower()[:80] for f in wf if f]
+        elif isinstance(wf, str) and wf:
+            entries = [wf.strip().lower()[:80]]
+
+        for entry in entries:
+            if not entry:
+                continue
+            counts[entry] += 1
+            if ts and (entry not in last_seen or ts > last_seen[entry]):
+                last_seen[entry] = ts
+
+    results = []
+    for pattern, count in counts.most_common(15):
+        results.append({
+            "pattern": pattern,
+            "count": count,
+            "lastSeen": last_seen.get(pattern, "unknown"),
+            "recurring": count >= 3,
+        })
+    return results
+
+
 @click.command()
 @click.argument("query", required=False, default=None)
 @click.option("--failed", is_flag=True, help="Show only failed reports.")
 @click.option("--service", default=None, help="Filter to a specific service.")
 @click.option("--limit", default=10, type=int, help="Max reports to show.")
-def remember_command(query, failed, service, limit):
+@click.option("--patterns", is_flag=True, help="Show aggregated failure patterns.")
+@click.option("--compare", nargs=2, default=None, type=str, help="Compare two exit reports side-by-side.")
+def remember_command(query, failed, service, limit, patterns, compare):
     """Search exit reports by keyword.
 
     QUERY is an optional search term. Without it, shows the most recent reports.
@@ -247,6 +287,64 @@ def remember_command(query, failed, service, limit):
             "Run [bold]covenant init <name>[/bold] first."
         )
         raise SystemExit(1)
+
+    # --- Compare mode ---
+    if compare:
+        from covenant_cli.theme import branded_table
+
+        inheritance_dir = project_root / "memory" / "inheritance"
+        file_a, file_b = compare
+        path_a = inheritance_dir / file_a
+        path_b = inheritance_dir / file_b
+
+        for label, path in [("A", path_a), ("B", path_b)]:
+            if not path.exists():
+                print_error(f"Report not found: {path.name}")
+                raise SystemExit(1)
+
+        try:
+            report_a = json.loads(path_a.read_text(encoding="utf-8"))
+            report_b = json.loads(path_b.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            print_error(f"Failed to parse report: {exc}")
+            raise SystemExit(1)
+
+        compare_fields = [
+            ("service", "Service"),
+            ("status", "Status"),
+            ("duration_seconds", "Duration"),
+            ("what_worked", "What Worked"),
+            ("what_failed", "What Failed"),
+            ("recommendations", "Recommendations"),
+        ]
+
+        table = branded_table(
+            "Report Comparison",
+            columns=[
+                ("Field", f"bold {GOLD}"),
+                (file_a[:30], INK_LIGHT),
+                (file_b[:30], INK_LIGHT),
+            ],
+        )
+
+        for key, label in compare_fields:
+            val_a = report_a.get(key, "--")
+            val_b = report_b.get(key, "--")
+            str_a = ", ".join(val_a) if isinstance(val_a, list) else str(val_a)
+            str_b = ", ".join(val_b) if isinstance(val_b, list) else str(val_b)
+            # Truncate long values
+            str_a = str_a[:80] + "..." if len(str_a) > 80 else str_a
+            str_b = str_b[:80] + "..." if len(str_b) > 80 else str_b
+            # Highlight differences
+            if str_a != str_b:
+                str_a = f"[{OXBLOOD}]{str_a}[/]"
+                str_b = f"[{OXBLOOD}]{str_b}[/]"
+            table.add_row(label, str_a, str_b)
+
+        console.print()
+        console.print(table)
+        console.print()
+        return
 
     reports = _load_exit_reports(project_root)
     memos = _load_memos(project_root)
@@ -260,6 +358,35 @@ def remember_command(query, failed, service, limit):
             f"[{INK_LIGHT}]Run a service to generate data, "
             f"or check memory/inheritance/.[/]"
         )
+        return
+
+    # --- Patterns mode ---
+    if patterns and reports:
+        from covenant_cli.theme import branded_table
+        failure_patterns = _aggregate_failure_patterns(reports)
+        if failure_patterns:
+            table = branded_table(
+                "Failure Patterns",
+                columns=[
+                    ("Pattern", INK_LIGHT),
+                    ("Count", "bold"),
+                    ("Last Seen", INK_LIGHT),
+                    ("Status", "bold"),
+                ],
+            )
+            for fp in failure_patterns:
+                badge = f"[{OXBLOOD}][recurring][/]" if fp["recurring"] else ""
+                table.add_row(
+                    fp["pattern"],
+                    str(fp["count"]),
+                    fp["lastSeen"],
+                    badge,
+                )
+            console.print()
+            console.print(table)
+        else:
+            console.print(f"\n[{INK_LIGHT}]No failure patterns found.[/]")
+        console.print()
         return
 
     # --- Consolidated matches (compiled-truth boost -- displayed FIRST) ---
@@ -295,6 +422,12 @@ def remember_command(query, failed, service, limit):
 
     if query:
         filtered = [r for r in filtered if _matches_query(r, query)]
+
+    # Sort by freshness effectiveScore descending (fresher reports first)
+    filtered.sort(
+        key=lambda r: r.get("freshness", {}).get("effectiveScore", 1.0),
+        reverse=True,
+    )
 
     if filtered:
         total = len(filtered)

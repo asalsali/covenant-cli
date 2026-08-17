@@ -223,6 +223,175 @@ def _print_summary(summaries: dict[str, dict], report_count: int, archived: int)
     console.print()
 
 
+def _update_freshness(reports_dir: Path, consolidation_count: int) -> None:
+    """Update freshness scores on all exit reports in the directory.
+
+    effectiveScore = baseScore * 0.5^(consolidation_count / decay_period)
+    where decay_period is 10 for standard, 20 for slow.
+    """
+    if not reports_dir.exists():
+        return
+
+    for json_file in reports_dir.glob("*.json"):
+        try:
+            data = json.loads(json_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+
+        freshness = data.get("freshness", {})
+        base_score = freshness.get("baseScore", 1.0)
+        decay_rate = freshness.get("decayRate", "standard")
+        last_ref = freshness.get("lastReferencedAt")
+
+        decay_period = 20 if decay_rate == "slow" else 10
+        effective = round(base_score * (0.5 ** (consolidation_count / decay_period)), 4)
+
+        data["freshness"] = {
+            "baseScore": base_score,
+            "effectiveScore": effective,
+            "decayRate": decay_rate,
+            "lastReferencedAt": last_ref,
+        }
+
+        json_file.write_text(
+            json.dumps(data, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+
+def _update_baselines(summaries: dict[str, dict], project_root: Path) -> list[str]:
+    """Record or compare performance baselines per service.
+
+    On first successful run per service, record baseline.
+    On subsequent consolidations, flag >30% drift (worse direction only).
+    Returns list of warning strings for drifted metrics.
+    """
+    baselines_path = project_root / "registry" / "baselines.json"
+    baselines_path.parent.mkdir(parents=True, exist_ok=True)
+
+    baselines: dict[str, dict] = {}
+    if baselines_path.exists():
+        try:
+            baselines = json.loads(baselines_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            baselines = {}
+
+    now = datetime.now(timezone.utc).isoformat()
+    warnings: list[str] = []
+
+    for service, stats in summaries.items():
+        total = stats["total_runs"]
+        if total == 0:
+            continue
+
+        success_rate = stats["success_rate"] / 100.0  # normalize to 0-1
+        avg_duration = stats["avg_duration"]
+        avg_tokens = (
+            stats["total_tokens"] / total if total > 0 else 0.0
+        )
+
+        if service not in baselines:
+            # First successful consolidation -- record baseline
+            baselines[service] = {
+                "avgDuration": avg_duration,
+                "successRate": success_rate,
+                "avgTokensPerRun": round(avg_tokens, 1),
+                "setAt": now,
+                "totalRunsAtBaseline": total,
+            }
+            continue
+
+        # Compare current stats to baseline
+        bl = baselines[service]
+        bl_dur = bl.get("avgDuration", 0)
+        bl_rate = bl.get("successRate", 0)
+        bl_tokens = bl.get("avgTokensPerRun", 0)
+
+        # Duration increased >30%
+        if bl_dur > 0 and avg_duration > bl_dur * 1.3:
+            pct = round((avg_duration - bl_dur) / bl_dur * 100)
+            warnings.append(
+                f"{service}: duration +{pct}% above baseline "
+                f"(avg {bl_dur:.1f}s -> {avg_duration:.1f}s)"
+            )
+
+        # Success rate decreased >30% (relative)
+        if bl_rate > 0 and success_rate < bl_rate * 0.7:
+            pct = round((bl_rate - success_rate) / bl_rate * 100)
+            warnings.append(
+                f"{service}: success rate -{pct}% below baseline "
+                f"({bl_rate:.0%} -> {success_rate:.0%})"
+            )
+
+        # Token consumption increased >30%
+        if bl_tokens > 0 and avg_tokens > bl_tokens * 1.3:
+            pct = round((avg_tokens - bl_tokens) / bl_tokens * 100)
+            warnings.append(
+                f"{service}: token consumption +{pct}% above baseline "
+                f"(avg {bl_tokens:.0f} -> {avg_tokens:.0f})"
+            )
+
+    baselines_path.write_text(
+        json.dumps(baselines, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    return warnings
+
+
+def _compute_trust(summaries: dict[str, dict], project_root: Path) -> None:
+    """Compute and write trust levels for each service.
+
+    Trust levels:
+      0 = Untested (default)
+      1 = Proven   (3+ runs, >70% success)
+      2 = Trusted  (10+ runs, >85% success)
+      3 = Veteran  (25+ runs, >90% success)
+
+    Demotion: if 2+ of the last 5 runs failed, drop one level.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    trust: dict[str, dict] = {}
+
+    for service, stats in summaries.items():
+        total = stats["total_runs"]
+        success_rate = stats["success_rate"]
+
+        # Determine base level from thresholds
+        level = 0
+        if total >= 25 and success_rate > 90:
+            level = 3
+        elif total >= 10 and success_rate > 85:
+            level = 2
+        elif total >= 3 and success_rate > 70:
+            level = 1
+
+        # Demotion check: count failures in last 5 reports
+        svc_reports: list[tuple[Path, dict]] = stats.get("_reports", [])
+        recent = svc_reports[-5:] if len(svc_reports) >= 5 else svc_reports
+        recent_failures = sum(
+            1 for _, d in recent if d.get("status") == "failed"
+        )
+        if recent_failures >= 2 and level > 0:
+            level -= 1
+
+        labels = {0: "Untested", 1: "Proven", 2: "Trusted", 3: "Veteran"}
+        trust[service] = {
+            "level": level,
+            "label": labels[level],
+            "totalRuns": total,
+            "successRate": success_rate,
+            "updatedAt": now,
+        }
+
+    trust_path = project_root / "registry" / "trust.json"
+    trust_path.parent.mkdir(parents=True, exist_ok=True)
+    trust_path.write_text(
+        json.dumps(trust, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 @click.command()
 @click.option("--archive", is_flag=True, help="Archive old exit reports (keep last 5 per service)")
 def consolidate_command(archive):
@@ -284,4 +453,21 @@ def consolidate_command(archive):
         encoding="utf-8",
     )
 
+    # Update freshness scores on all exit reports
+    inheritance_dir = memory_dir / "inheritance"
+    consolidation_count = len(list(memory_dir.glob("consolidated-*.json")))
+    _update_freshness(inheritance_dir, consolidation_count)
+
+    # Compute and write service trust levels
+    _compute_trust(summaries, project_root)
+
+    # Update baselines and detect regression drift
+    drift_warnings = _update_baselines(summaries, project_root)
+
     _print_summary(summaries, len(reports), archived)
+
+    # Display drift warnings
+    if drift_warnings:
+        for warning in drift_warnings:
+            console.print(f"  [{GOLD}]DRIFT:[/] [{OXBLOOD}]{warning}[/]")
+        console.print()

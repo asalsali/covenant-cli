@@ -13,6 +13,7 @@ env/
 venv/
 .pytest_cache/
 .mypy_cache/
+test-sandbox/
 .ruff_cache/
 *.swp
 *.swo

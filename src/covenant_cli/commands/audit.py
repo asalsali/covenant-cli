@@ -3,6 +3,7 @@
 import hashlib
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 import click
@@ -284,8 +285,73 @@ def _run_checks(project_root: Path) -> list[dict]:
     return results
 
 
+def _log_audit(project_root: Path, score: int, max_score: int, results: list) -> None:
+    """Append audit result to registry/audit-history.json (keep last 50)."""
+    history_path = project_root / "registry" / "audit-history.json"
+    history_path.parent.mkdir(parents=True, exist_ok=True)
+
+    history: list[dict] = []
+    if history_path.exists():
+        try:
+            history = json.loads(history_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            history = []
+
+    passes = sum(1 for r in results if r["status"] == "pass")
+    warns = sum(1 for r in results if r["status"] == "warn")
+    fails = sum(1 for r in results if r["status"] == "fail")
+
+    history.append({
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "score": score,
+        "maxScore": max_score,
+        "passes": passes,
+        "warns": warns,
+        "fails": fails,
+    })
+
+    # Keep only last 50 entries
+    history = history[-50:]
+
+    history_path.write_text(
+        json.dumps(history, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _detect_audit_trend(history: list[dict]) -> str | None:
+    """Detect trends in the last 5 audit scores.
+
+    Returns a trend string or None if no clear trend.
+    """
+    if len(history) < 2:
+        return None
+
+    recent = history[-5:]
+    scores = [entry["score"] for entry in recent]
+
+    # Monotonically declining (each score <= previous, at least one strict decrease)
+    if all(scores[i] >= scores[i + 1] for i in range(len(scores) - 1)) and scores[0] > scores[-1]:
+        score_str = " -> ".join(str(s) for s in scores)
+        return f"Audit scores declining: {score_str}"
+
+    # Monotonically improving
+    if all(scores[i] <= scores[i + 1] for i in range(len(scores) - 1)) and scores[0] < scores[-1]:
+        score_str = " -> ".join(str(s) for s in scores)
+        return f"Audit scores improving: {score_str}"
+
+    # Latest is lowest ever across full history
+    all_scores = [entry["score"] for entry in history]
+    if scores[-1] <= min(all_scores):
+        return f"Lowest audit score recorded: {scores[-1]}"
+
+    return None
+
+
 @click.command()
-def audit_command():
+@click.option("--json", "output_json", is_flag=True, help="Output results as JSON.")
+@click.option("--strict", type=int, default=None, help="Exit 1 if score < threshold.")
+def audit_command(output_json, strict):
     """Run a 10-point structural health check.
 
     Verifies governance files, registry integrity, service structure,
@@ -293,22 +359,18 @@ def audit_command():
     """
     project_root = _find_project_root()
     if project_root is None:
-        print_error(
-            "Not inside a covenant project. "
-            "Run [bold]covenant init <name>[/bold] first."
-        )
+        if output_json:
+            click.echo(json.dumps({"error": "Not inside a covenant project"}))
+        else:
+            print_error(
+                "Not inside a covenant project. "
+                "Run [bold]covenant init <name>[/bold] first."
+            )
         raise SystemExit(1)
-
-    console.print()
-    console.print(branded_panel(
-        f"[{INK_LIGHT}]Running 10-point structural health check...[/]",
-        title="Audit",
-    ))
-    console.print()
 
     results = _run_checks(project_root)
 
-    # Display each check
+    # Compute score
     pass_count = 0
     warn_count = 0
     fail_count = 0
@@ -316,18 +378,63 @@ def audit_command():
 
     for r in results:
         status = r["status"]
-        message = r["message"]
-
         if status == "pass":
             pass_count += 1
             score += 10
-            label = f"[{GREEN}][pass][/]"
         elif status == "warn":
             warn_count += 1
             score += 5
-            label = f"[{GOLD}][warn][/]"
         else:
             fail_count += 1
+
+    max_score = len(results) * 10
+
+    # Log audit result and detect trends
+    _log_audit(project_root, score, max_score, results)
+
+    history_path = project_root / "registry" / "audit-history.json"
+    audit_history: list[dict] = []
+    if history_path.exists():
+        try:
+            audit_history = json.loads(history_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+    trend = _detect_audit_trend(audit_history)
+
+    # JSON output branch
+    if output_json:
+        payload = {
+            "score": score,
+            "maxScore": max_score,
+            "checks": [
+                {"name": r["message"], "status": r["status"], "detail": r["message"]}
+                for r in results
+            ],
+        }
+        if trend:
+            payload["trend"] = trend
+        click.echo(json.dumps(payload))
+        if strict is not None and score < strict:
+            raise SystemExit(1)
+        return
+
+    # Rich output branch
+    console.print()
+    console.print(branded_panel(
+        f"[{INK_LIGHT}]Running 10-point structural health check...[/]",
+        title="Audit",
+    ))
+    console.print()
+
+    for r in results:
+        status = r["status"]
+        message = r["message"]
+
+        if status == "pass":
+            label = f"[{GREEN}][pass][/]"
+        elif status == "warn":
+            label = f"[{GOLD}][warn][/]"
+        else:
             label = f"[{OXBLOOD}][fail][/]"
 
         console.print(f"  {label}  [{INK_LIGHT}]{message}[/]")
@@ -348,5 +455,16 @@ def audit_command():
         f"[{GOLD}]{warn_count}[/] [{INK_LIGHT}]warn,[/] "
         f"[{OXBLOOD}]{fail_count}[/] [{INK_LIGHT}]fail[/]"
     )
-    console.print(f"  [{INK_LIGHT}]Score:[/]  [{score_color}]{score}/100[/]")
+    console.print(f"  [{INK_LIGHT}]Score:[/]  [{score_color}]{score}/{max_score}[/]")
+
+    # Display audit trend
+    if trend:
+        if "improving" in trend:
+            console.print(f"  [{GREEN}]{trend}[/]")
+        else:
+            console.print(f"  [{GOLD}]{trend}[/]")
+
     console.print()
+
+    if strict is not None and score < strict:
+        raise SystemExit(1)
