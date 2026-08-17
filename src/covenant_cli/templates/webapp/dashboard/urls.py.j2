@@ -29,4 +29,15 @@ urlpatterns = [
         views.pipeline_results,
         name="pipeline_results",
     ),
+    # JSON API endpoints
+    path(
+        "api/status/<int:group_id>/",
+        views.pipeline_status_api,
+        name="pipeline_status_api",
+    ),
+    path(
+        "api/key-status/",
+        views.api_key_status,
+        name="api_key_status",
+    ),
 ]

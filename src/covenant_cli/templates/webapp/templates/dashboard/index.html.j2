@@ -26,7 +26,7 @@ python manage.py createsuperuser</code></pre>
                 name="user_input"
                 rows="3"
                 class="hero-textarea"
-                placeholder="Describe your task... e.g., 'Find recent papers on quantum computing applications in drug discovery'"
+                placeholder="{{ input_placeholder|default:'Describe your task...' }}"
                 required
             ></textarea>
             <button type="submit" class="btn btn-primary btn-hero">Run Pipeline</button>

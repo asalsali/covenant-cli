@@ -19,6 +19,10 @@
         <div class="nav-links">
             <a href="{% url 'dashboard:index' %}">Dashboard</a>
             <a href="/admin/">Admin</a>
+            <span id="api-key-indicator" class="api-key-badge api-key-badge--loading" title="Checking API key...">
+                <span class="api-key-dot"></span>
+                <span class="api-key-label">Checking...</span>
+            </span>
         </div>
     </nav>
 
@@ -29,5 +33,35 @@
     <footer class="footer">
         <p>{% endraw %}{{ project_name }}{% raw %} &mdash; governed by <a href="https://github.com/alexsalsali/covenant-cli">covenant</a></p>
     </footer>
+
+    <script>
+    /* API key status check -- runs on every page */
+    (function() {
+        var el = document.getElementById('api-key-indicator');
+        if (!el) return;
+        fetch('{% url "dashboard:api_key_status" %}')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                var dot = el.querySelector('.api-key-dot');
+                var label = el.querySelector('.api-key-label');
+                el.classList.remove('api-key-badge--loading');
+                if (data.configured) {
+                    el.classList.add('api-key-badge--ok');
+                    el.title = 'API key configured' + (data.masked ? ' (' + data.masked + ')' : '');
+                    label.textContent = 'API Ready';
+                } else {
+                    el.classList.add('api-key-badge--missing');
+                    el.title = 'Set OPENAI_API_KEY in your .env file';
+                    label.textContent = 'API Key Missing';
+                }
+            })
+            .catch(function() {
+                el.classList.remove('api-key-badge--loading');
+                el.classList.add('api-key-badge--missing');
+                el.querySelector('.api-key-label').textContent = 'Key Unknown';
+            });
+    })();
+    </script>
+    {% block extra_js %}{% endblock %}
 </body>
 </html>{% endraw %}

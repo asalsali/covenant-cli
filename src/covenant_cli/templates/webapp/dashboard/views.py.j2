@@ -1,10 +1,23 @@
 """{{ project_name }} -- dashboard views."""
 
-from django.http import HttpResponseNotAllowed
+import os
+
+from django.http import HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
 from core.models import AgentRun, RunGroup, Service
 from dashboard.runner import run_pipeline_background, run_service_background
+
+
+def _build_placeholder(services):
+    """Build a context-aware placeholder from registered service names."""
+    names = [s.name for s in services]
+    if not names:
+        return "Describe your task..."
+    if len(names) == 1:
+        return f"Describe a task for {names[0]}..."
+    joined = ", ".join(names[:-1]) + f" and {names[-1]}"
+    return f"Enter a task for {joined} to process..."
 
 
 def index(request):
@@ -20,6 +33,8 @@ def index(request):
             "recent_runs": [],
             "recent_pipelines": [],
             "needs_migrate": True,
+            "input_placeholder": "Describe your task...",
+            "api_key_ok": bool(os.environ.get("OPENAI_API_KEY")),
         })
     return render(
         request,
@@ -28,6 +43,8 @@ def index(request):
             "services": services,
             "recent_runs": recent_runs,
             "recent_pipelines": recent_pipelines,
+            "input_placeholder": _build_placeholder(services),
+            "api_key_ok": bool(os.environ.get("OPENAI_API_KEY")),
         },
     )
 
@@ -108,5 +125,47 @@ def pipeline_results(request, group_id):
             "group": group,
             "runs": runs,
             "all_complete": all_complete,
+            "api_key_ok": bool(os.environ.get("OPENAI_API_KEY")),
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# JSON API endpoints
+# ---------------------------------------------------------------------------
+
+def pipeline_status_api(request, group_id):
+    """Return JSON status for a pipeline run group (used by JS polling)."""
+    group = get_object_or_404(RunGroup, id=group_id)
+    runs = group.runs.select_related("service").order_by("id")
+
+    run_data = []
+    for run in runs:
+        entry = {
+            "id": run.id,
+            "service_name": run.service.name,
+            "service_slug": run.service.slug,
+            "status": run.status,
+            "status_display": run.get_status_display(),
+            "duration_seconds": run.duration_seconds,
+            "tokens_used": run.tokens_used,
+            "exit_report": run.exit_report,
+        }
+        run_data.append(entry)
+
+    return JsonResponse({
+        "group_id": group.id,
+        "group_status": group.status,
+        "group_status_display": group.get_status_display(),
+        "all_complete": group.all_complete(),
+        "runs": run_data,
+    })
+
+
+def api_key_status(request):
+    """Return whether the OPENAI_API_KEY is configured."""
+    key = os.environ.get("OPENAI_API_KEY", "")
+    return JsonResponse({
+        "configured": bool(key),
+        "masked": f"{key[:4]}...{key[-4:]}" if len(key) > 8 else "",
+    })

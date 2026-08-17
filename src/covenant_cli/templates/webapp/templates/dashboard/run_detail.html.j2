@@ -45,7 +45,7 @@
     {% if run.exit_report.what_worked %}
     <div class="report-section report-success">
         <h3>What Worked</h3>
-        {% if run.exit_report.what_worked|length > 0 %}
+        {% if run.exit_report.what_worked.0 %}
             <ul>
             {% for item in run.exit_report.what_worked %}
                 <li>{{ item }}</li>
@@ -60,7 +60,7 @@
     {% if run.exit_report.what_failed %}
     <div class="report-section report-failure">
         <h3>What Failed</h3>
-        {% if run.exit_report.what_failed|length > 0 %}
+        {% if run.exit_report.what_failed.0 %}
             <ul>
             {% for item in run.exit_report.what_failed %}
                 <li>{{ item }}</li>
@@ -75,7 +75,7 @@
     {% if run.exit_report.recommendations %}
     <div class="report-section report-recommendations">
         <h3>Recommendations</h3>
-        {% if run.exit_report.recommendations|length > 0 %}
+        {% if run.exit_report.recommendations.0 %}
             <ul>
             {% for item in run.exit_report.recommendations %}
                 <li>{{ item }}</li>
@@ -87,11 +87,26 @@
     </div>
     {% endif %}
 
+    {% if run.exit_report.key_findings %}
+    <details class="report-details" open>
+        <summary class="report-details-summary">Key Findings ({{ run.exit_report.key_findings|length }})</summary>
+        <div class="report-details-body">
+            <ul>
+            {% for item in run.exit_report.key_findings %}
+                <li>{{ item }}</li>
+            {% endfor %}
+            </ul>
+        </div>
+    </details>
+    {% endif %}
+
     {% if run.exit_report.output %}
-    <div class="report-section">
-        <h3>Output</h3>
-        <pre class="code-block">{{ run.exit_report.output }}</pre>
-    </div>
+    <details class="report-details" open>
+        <summary class="report-details-summary">Output</summary>
+        <div class="report-details-body">
+            <pre class="code-block">{{ run.exit_report.output }}</pre>
+        </div>
+    </details>
     {% endif %}
 
     {% if run.exit_report.error %}

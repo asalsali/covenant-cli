@@ -842,6 +842,167 @@ code {
     margin-bottom: 0.75rem;
 }
 
+/* API key status badge */
+.api-key-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.2em 0.6em;
+    border-radius: 3px;
+    cursor: default;
+    white-space: nowrap;
+}
+
+.api-key-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.api-key-badge--loading {
+    color: var(--paper-deep);
+}
+
+.api-key-badge--loading .api-key-dot {
+    background: var(--paper-deep);
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+.api-key-badge--ok {
+    color: #a3c969;
+}
+
+.api-key-badge--ok .api-key-dot {
+    background: var(--green);
+}
+
+.api-key-badge--missing {
+    color: #d98a8a;
+}
+
+.api-key-badge--missing .api-key-dot {
+    background: var(--oxblood);
+    animation: pulse 2s ease-in-out infinite;
+}
+
+/* Spinner for running state */
+.spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--paper-deep);
+    border-top-color: var(--gold);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+    margin-right: 0.35rem;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Step meta info (duration, tokens) */
+.step-meta {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.step-meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.82rem;
+    color: var(--ink-light);
+}
+
+.step-meta-icon {
+    font-size: 0.75rem;
+}
+
+/* Recommendations in step findings */
+.step-findings--recommendations {
+    border-left: 3px solid var(--gold);
+    padding-left: 0.75rem;
+    margin-top: 0.25rem;
+}
+
+.step-findings--recommendations h4 {
+    color: var(--gold-dim);
+}
+
+/* Collapsible output details in pipeline steps */
+.step-output-details {
+    margin-bottom: 0.5rem;
+    border: 1px solid var(--paper-deep);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.step-output-details summary {
+    cursor: pointer;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--ink-mid);
+    background: var(--paper);
+    user-select: none;
+}
+
+.step-output-details summary:hover {
+    color: var(--gold);
+}
+
+.step-output-details > ul,
+.step-output-details > pre {
+    padding: 0.5rem 0.75rem;
+}
+
+.step-output-details > ul {
+    list-style-position: inside;
+    font-size: 0.9rem;
+}
+
+/* Report detail collapsibles */
+.report-details {
+    margin-bottom: 1rem;
+    border: 1px solid var(--paper-deep);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.report-details-summary {
+    cursor: pointer;
+    padding: 0.6rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--ink-mid);
+    background: var(--paper);
+    user-select: none;
+}
+
+.report-details-summary:hover {
+    color: var(--gold);
+}
+
+.report-details-body {
+    padding: 0.75rem 1rem;
+}
+
+.report-details-body ul {
+    padding-left: 1.25rem;
+}
+
+.report-details-body li {
+    margin-bottom: 0.25rem;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .container {
@@ -868,8 +1029,20 @@ code {
         font-size: 1.4rem;
     }
 
+    .hero-form {
+        max-width: 100%;
+    }
+
+    .hero-textarea {
+        font-size: 0.95rem;
+    }
+
     .trigger-form {
         flex-direction: column;
+    }
+
+    .trigger-form .input-inline {
+        width: 100%;
     }
 
     .trigger-form-inline {
@@ -883,5 +1056,55 @@ code {
 
     .truncate-cell {
         max-width: 150px;
+    }
+
+    /* Stack nav items */
+    .nav-links {
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .api-key-label {
+        display: none;
+    }
+
+    .api-key-badge {
+        padding: 0.2em;
+    }
+
+    /* Pipeline steps full width */
+    .pipeline-step-header {
+        padding: 0.75rem 1rem;
+    }
+
+    .pipeline-step-body {
+        padding: 0 1rem 0.75rem;
+    }
+
+    .step-meta {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    /* Stats boxes */
+    .stat-box {
+        min-width: 0;
+        padding: 0.75rem 1rem;
+    }
+
+    .stat-number {
+        font-size: 1.1rem;
+    }
+
+    /* Table horizontal scroll */
+    .table-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .section-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.75rem;
     }
 }

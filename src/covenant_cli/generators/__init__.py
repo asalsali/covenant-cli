@@ -299,7 +299,7 @@ def generate_tools_file(
                 f"def {tool_name}({param_str}) -> str:",
                 f'    """{desc}"""',
                 f"    # TODO: Implement {tool_name}",
-                f'    raise NotImplementedError("{tool_name} is not yet implemented")',
+                f'    return "TODO: {tool_name} is not yet implemented. Edit services/<slug>/tools.py to add the implementation."',
                 "",
                 "",
             ])
@@ -336,9 +336,20 @@ def generate_manager_file(service_spec: dict, pipeline_step: dict) -> str:
             f"from .agents.{agent['name']} import {agent['name']}"
         )
         agent_runs.append(
+            f'            # Build pipeline-aware input\n'
+            f'            input_parts = []\n'
+            f'            if request.get("query"):\n'
+            f'                input_parts.append(f"User request: {{request[\'query\']}}")\n'
+            f'            for key, val in request.items():\n'
+            f'                if key.endswith("_output") and val:\n'
+            f'                    input_parts.append(f"Previous agent output: {{val}}")\n'
+            f'            if request.get("previous_result"):\n'
+            f'                input_parts.append(f"Upstream result: {{request[\'previous_result\']}}")\n'
+            f'            input_text = "\\n\\n".join(input_parts) if input_parts else str(request)\n'
+            f'\n'
             f'            agent_result = await Runner.run(\n'
             f'                {agent["name"]},\n'
-            f'                input=request.get("query", ""),\n'
+            f'                input=input_text,\n'
             f'            )\n'
             f'            result["{agent["name"]}_output"] = agent_result.final_output\n'
             f'            what_worked.append("{agent["name"]} completed")'
@@ -354,6 +365,7 @@ See GOVERNANCE.md rules 4 (manager orchestration) and 5 (exit reports).
 """
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -383,6 +395,10 @@ class {service_class}Manager:
 
     async def run(self, request: dict[str, Any]) -> dict[str, Any]:
         """Run the service pipeline."""
+        if not os.environ.get("OPENAI_API_KEY"):
+            raise EnvironmentError(
+                "OPENAI_API_KEY not set. Add your key to .env"
+            )
         start_time = datetime.now(timezone.utc)
         what_worked: list[str] = []
         what_failed: list[str] = []
@@ -518,10 +534,34 @@ def main():
     run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"])
     print()
 
-    # Check for API key
+    # Set up .env file (Gap 3: API key handling)
+    env_path = Path(".env")
+    env_example = Path(".env.example")
+    if not env_path.exists() and env_example.exists():
+        import shutil
+        shutil.copy(env_example, env_path)
+        print("  Created .env from .env.example")
+        print()
+
+    # Check/prompt for API key
+    from dotenv import load_dotenv
+    load_dotenv()
     if not os.environ.get("OPENAI_API_KEY"):
-        print("  WARNING: OPENAI_API_KEY is not set.")
-        print("  Copy .env.example to .env and add your key.")
+        print("  Your agents need an OpenAI API key to run.")
+        print("  Get one at: https://platform.openai.com/api-keys")
+        print()
+        key = input("  Paste your OpenAI API key (or press Enter to skip): ").strip()
+        if key:
+            env_content = env_path.read_text(encoding="utf-8")
+            env_content = env_content.replace(
+                "OPENAI_API_KEY=sk-your-key-here",
+                f"OPENAI_API_KEY={{key}}",
+            )
+            env_path.write_text(env_content, encoding="utf-8")
+            os.environ["OPENAI_API_KEY"] = key
+            print("  API key saved to .env")
+        else:
+            print("  Skipped. Add your key to .env before running agents.")
         print()
 
     # Create and run Django migrations
@@ -530,6 +570,42 @@ def main():
     print()
     print("  Applying migrations...")
     run([sys.executable, "manage.py", "migrate"])
+    print()
+
+    # Register services from registry/agents.json into Django (Gap 1)
+    agents_json = Path("registry/agents.json")
+    if agents_json.exists():
+        print("  Registering services in Django...")
+        run([sys.executable, "-c", """
+import os, json, django
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+django.setup()
+from core.models import Service
+registry = json.loads(open('registry/agents.json', encoding='utf-8').read())
+services = registry.get('services', [])
+for i, svc in enumerate(services):
+    Service.objects.get_or_create(
+        slug=svc['slug'],
+        defaults={{
+            'name': svc['name'],
+            'sdk': svc.get('sdk', 'openai'),
+            'status': 'registered',
+            'description': svc.get('description', ''),
+            'order': i,
+        }}
+    )
+print(f"  Registered {{len(services)}} services.")
+"""])
+        print()
+    else:
+        print("  No registry/agents.json found -- skipping service registration.")
+        print()
+
+    # Optional superuser creation (Gap 5)
+    print("  Create admin superuser? (optional, for /admin/ access)")
+    create_su = input("  Create superuser? [y/N]: ").strip().lower()
+    if create_su == "y":
+        run([sys.executable, "manage.py", "createsuperuser"])
     print()
 
     print("  Setup complete! Next steps:")

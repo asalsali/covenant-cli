@@ -2,25 +2,19 @@
 
 {% block title %}Pipeline #{{ group.id }}{% endblock %}
 
-{% block extra_head %}
-{% if not all_complete %}
-<meta http-equiv="refresh" content="3">
-{% endif %}
-{% endblock %}
-
 {% block content %}
 <div class="page-header">
     <div class="breadcrumb">
         <a href="{% url 'dashboard:index' %}">Dashboard</a> &rsaquo; Pipeline #{{ group.id }}
     </div>
-    <h1>
+    <h1 id="pipeline-title">
         {% if all_complete %}
             Pipeline Complete
         {% else %}
             Pipeline Running
         {% endif %}
     </h1>
-    <span class="badge badge-{{ group.status }}">{{ group.get_status_display }}</span>
+    <span id="pipeline-badge" class="badge badge-{{ group.status }}">{{ group.get_status_display }}</span>
 </div>
 
 <div class="pipeline-query">
@@ -28,100 +22,106 @@
     <p>{{ group.user_input }}</p>
 </div>
 
-{% if not all_complete %}
-<div class="refresh-indicator">
-    <span class="refresh-dot"></span> Auto-refreshing every 3 seconds
+<div id="polling-indicator" class="refresh-indicator" {% if all_complete %}style="display:none"{% endif %}>
+    <span class="refresh-dot"></span> <span id="polling-label">Polling for updates...</span>
 </div>
-{% endif %}
 
 <!-- Pipeline Steps -->
-<div class="pipeline-steps">
+<div id="pipeline-steps" class="pipeline-steps">
     {% for run in runs %}
-    <div class="pipeline-step pipeline-step--{{ run.status }}">
+    <div class="pipeline-step pipeline-step--{{ run.status }}" data-run-id="{{ run.id }}">
         <div class="pipeline-step-header">
             <span class="pipeline-step-number">{{ forloop.counter }}</span>
             <div class="pipeline-step-title">
                 <h3>{{ run.service.name }}</h3>
-                <span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span>
+                <span class="badge badge-{{ run.status }} step-badge">{{ run.get_status_display }}</span>
             </div>
         </div>
-
-        {% if run.status == "running" %}
-        <div class="pipeline-step-body">
-            <p class="running-text">Processing...</p>
-        </div>
-        {% endif %}
-
-        {% if run.status == "completed" %}
-        <div class="pipeline-step-body">
-            {% if run.duration_seconds is not None %}
-            <p class="step-duration">Completed in {{ run.duration_seconds|floatformat:1 }}s</p>
-            {% endif %}
-
-            {% if run.exit_report.what_worked %}
-            <div class="step-findings step-findings--success">
-                <h4>What Worked</h4>
-                {% if run.exit_report.what_worked.0 %}
-                <ul>
-                    {% for item in run.exit_report.what_worked %}
-                    <li>{{ item }}</li>
-                    {% endfor %}
-                </ul>
-                {% else %}
-                <p>{{ run.exit_report.what_worked }}</p>
+        <div class="pipeline-step-body step-body-content">
+            {% if run.status == "running" %}
+            <p class="running-text"><span class="spinner"></span> Processing...</p>
+            {% elif run.status == "completed" %}
+                {% if run.duration_seconds is not None %}
+                <div class="step-meta">
+                    <span class="step-meta-item">
+                        <span class="step-meta-icon">&#9201;</span> {{ run.duration_seconds|floatformat:1 }}s
+                    </span>
+                    {% if run.tokens_used %}
+                    <span class="step-meta-item">
+                        <span class="step-meta-icon">&#9671;</span> {{ run.tokens_used }} tokens
+                    </span>
+                    {% endif %}
+                </div>
                 {% endif %}
-            </div>
-            {% endif %}
 
-            {% if run.exit_report.output %}
-            <div class="step-findings">
-                <h4>Output</h4>
-                <pre class="code-block code-block--compact">{{ run.exit_report.output|truncatechars:500 }}</pre>
-            </div>
-            {% endif %}
+                {% if run.exit_report.what_worked %}
+                <div class="step-findings step-findings--success">
+                    <h4>What Worked</h4>
+                    {% if run.exit_report.what_worked.0 %}
+                    <ul>{% for item in run.exit_report.what_worked %}<li>{{ item }}</li>{% endfor %}</ul>
+                    {% else %}
+                    <p>{{ run.exit_report.what_worked }}</p>
+                    {% endif %}
+                </div>
+                {% endif %}
 
-            {% if run.exit_report.key_findings %}
-            <div class="step-findings">
-                <h4>Key Findings</h4>
-                <ul>
-                    {% for item in run.exit_report.key_findings %}
-                    <li>{{ item }}</li>
-                    {% endfor %}
-                </ul>
-            </div>
-            {% endif %}
+                {% if run.exit_report.what_failed %}
+                <div class="step-findings step-findings--failure">
+                    <h4>What Failed</h4>
+                    {% if run.exit_report.what_failed.0 %}
+                    <ul>{% for item in run.exit_report.what_failed %}<li>{{ item }}</li>{% endfor %}</ul>
+                    {% else %}
+                    <p>{{ run.exit_report.what_failed }}</p>
+                    {% endif %}
+                </div>
+                {% endif %}
 
-            <a href="{% url 'dashboard:run_detail' run.service.slug run.id %}" class="btn btn-secondary btn-sm">
-                Full Report
-            </a>
+                {% if run.exit_report.recommendations %}
+                <div class="step-findings step-findings--recommendations">
+                    <h4>Recommendations</h4>
+                    {% if run.exit_report.recommendations.0 %}
+                    <ul>{% for item in run.exit_report.recommendations %}<li>{{ item }}</li>{% endfor %}</ul>
+                    {% else %}
+                    <p>{{ run.exit_report.recommendations }}</p>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                {% if run.exit_report.output %}
+                <details class="step-output-details">
+                    <summary>Output</summary>
+                    <pre class="code-block code-block--compact">{{ run.exit_report.output|truncatechars:500 }}</pre>
+                </details>
+                {% endif %}
+
+                {% if run.exit_report.key_findings %}
+                <details class="step-output-details">
+                    <summary>Key Findings ({{ run.exit_report.key_findings|length }})</summary>
+                    <ul>{% for item in run.exit_report.key_findings %}<li>{{ item }}</li>{% endfor %}</ul>
+                </details>
+                {% endif %}
+
+                <a href="{% url 'dashboard:run_detail' run.service.slug run.id %}" class="btn btn-secondary btn-sm">
+                    Full Report
+                </a>
+            {% elif run.status == "failed" %}
+                {% if run.exit_report.error %}
+                <div class="step-findings step-findings--failure">
+                    <h4>Error</h4>
+                    <pre class="code-block code-block--compact">{{ run.exit_report.error }}</pre>
+                </div>
+                {% endif %}
+                {% if run.exit_report.what_failed %}
+                <div class="step-findings step-findings--failure">
+                    <h4>What Failed</h4>
+                    <ul>{% for item in run.exit_report.what_failed %}<li>{{ item }}</li>{% endfor %}</ul>
+                </div>
+                {% endif %}
+                <a href="{% url 'dashboard:run_detail' run.service.slug run.id %}" class="btn btn-secondary btn-sm">
+                    Full Report
+                </a>
+            {% endif %}
         </div>
-        {% endif %}
-
-        {% if run.status == "failed" %}
-        <div class="pipeline-step-body">
-            {% if run.exit_report.error %}
-            <div class="step-findings step-findings--failure">
-                <h4>Error</h4>
-                <pre class="code-block code-block--compact">{{ run.exit_report.error }}</pre>
-            </div>
-            {% endif %}
-
-            {% if run.exit_report.what_failed %}
-            <div class="step-findings step-findings--failure">
-                <h4>What Failed</h4>
-                <ul>
-                    {% for item in run.exit_report.what_failed %}
-                    <li>{{ item }}</li>
-                    {% endfor %}
-                </ul>
-            </div>
-            {% endif %}
-
-            <a href="{% url 'dashboard:run_detail' run.service.slug run.id %}" class="btn btn-secondary btn-sm">
-                Full Report
-            </a>
-        </div>
-        {% endif %}
     </div>
 
     {% if not forloop.last %}
@@ -134,8 +134,9 @@
     {% endfor %}
 </div>
 
+<!-- Summary (rendered by JS when complete, or server-side if already done) -->
+<div id="pipeline-summary" {% if not all_complete %}style="display:none"{% endif %}>
 {% if all_complete %}
-<!-- Final Results Summary -->
 <div class="section pipeline-summary">
     <h2>Summary</h2>
     <div class="stats-bar">
@@ -162,11 +163,7 @@
         <div class="report-section report-recommendations">
             <h3>Recommendations</h3>
             {% if last_run.exit_report.recommendations.0 %}
-            <ul>
-                {% for item in last_run.exit_report.recommendations %}
-                <li>{{ item }}</li>
-                {% endfor %}
-            </ul>
+            <ul>{% for item in last_run.exit_report.recommendations %}<li>{{ item }}</li>{% endfor %}</ul>
             {% else %}
             <p>{{ last_run.exit_report.recommendations }}</p>
             {% endif %}
@@ -193,4 +190,186 @@
     <a href="{% url 'dashboard:index' %}" class="btn btn-primary">Run Another Pipeline</a>
 </div>
 {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    var allComplete = {{ all_complete|yesno:"true,false" }};
+    if (allComplete) return;
+
+    var groupId = {{ group.id }};
+    var apiUrl = '{% url "dashboard:pipeline_status_api" group.id %}';
+    var pollInterval = 2000;
+    var maxErrors = 10;
+    var errorCount = 0;
+    var timer = null;
+
+    var statusClasses = {
+        pending: 'badge-pending',
+        running: 'badge-running',
+        completed: 'badge-completed',
+        failed: 'badge-failed'
+    };
+
+    var stepClasses = {
+        pending: 'pipeline-step--pending',
+        running: 'pipeline-step--running',
+        completed: 'pipeline-step--completed',
+        failed: 'pipeline-step--failed'
+    };
+
+    function escapeHtml(str) {
+        var d = document.createElement('div');
+        d.textContent = str;
+        return d.innerHTML;
+    }
+
+    function renderList(items) {
+        if (!items) return '';
+        if (Array.isArray(items)) {
+            return '<ul>' + items.map(function(i) { return '<li>' + escapeHtml(String(i)) + '</li>'; }).join('') + '</ul>';
+        }
+        return '<p>' + escapeHtml(String(items)) + '</p>';
+    }
+
+    function renderStepBody(run) {
+        var html = '';
+        if (run.status === 'pending') return '';
+        if (run.status === 'running') {
+            return '<p class="running-text"><span class="spinner"></span> Processing...</p>';
+        }
+        if (run.status === 'completed') {
+            /* Duration and tokens */
+            if (run.duration_seconds != null || run.tokens_used) {
+                html += '<div class="step-meta">';
+                if (run.duration_seconds != null) {
+                    html += '<span class="step-meta-item"><span class="step-meta-icon">&#9201;</span> ' +
+                        run.duration_seconds.toFixed(1) + 's</span>';
+                }
+                if (run.tokens_used) {
+                    html += '<span class="step-meta-item"><span class="step-meta-icon">&#9671;</span> ' +
+                        run.tokens_used + ' tokens</span>';
+                }
+                html += '</div>';
+            }
+            var er = run.exit_report || {};
+            if (er.what_worked) {
+                html += '<div class="step-findings step-findings--success"><h4>What Worked</h4>' +
+                    renderList(er.what_worked) + '</div>';
+            }
+            if (er.what_failed) {
+                html += '<div class="step-findings step-findings--failure"><h4>What Failed</h4>' +
+                    renderList(er.what_failed) + '</div>';
+            }
+            if (er.recommendations) {
+                html += '<div class="step-findings step-findings--recommendations"><h4>Recommendations</h4>' +
+                    renderList(er.recommendations) + '</div>';
+            }
+            if (er.output) {
+                var truncated = String(er.output).length > 500
+                    ? String(er.output).substring(0, 500) + '...'
+                    : String(er.output);
+                html += '<details class="step-output-details"><summary>Output</summary>' +
+                    '<pre class="code-block code-block--compact">' + escapeHtml(truncated) + '</pre></details>';
+            }
+            if (er.key_findings && Array.isArray(er.key_findings) && er.key_findings.length) {
+                html += '<details class="step-output-details"><summary>Key Findings (' +
+                    er.key_findings.length + ')</summary>' + renderList(er.key_findings) + '</details>';
+            }
+            html += '<a href="/service/' + encodeURIComponent(run.service_slug) +
+                '/run/' + run.id + '/" class="btn btn-secondary btn-sm">Full Report</a>';
+        }
+        if (run.status === 'failed') {
+            var er = run.exit_report || {};
+            if (er.error) {
+                html += '<div class="step-findings step-findings--failure"><h4>Error</h4>' +
+                    '<pre class="code-block code-block--compact">' + escapeHtml(String(er.error)) + '</pre></div>';
+            }
+            if (er.what_failed) {
+                html += '<div class="step-findings step-findings--failure"><h4>What Failed</h4>' +
+                    renderList(er.what_failed) + '</div>';
+            }
+            html += '<a href="/service/' + encodeURIComponent(run.service_slug) +
+                '/run/' + run.id + '/" class="btn btn-secondary btn-sm">Full Report</a>';
+        }
+        return html;
+    }
+
+    function poll() {
+        fetch(apiUrl)
+            .then(function(r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function(data) {
+                errorCount = 0;
+
+                /* Update each step */
+                data.runs.forEach(function(run) {
+                    var stepEl = document.querySelector('[data-run-id="' + run.id + '"]');
+                    if (!stepEl) return;
+
+                    /* Update step border class */
+                    Object.values(stepClasses).forEach(function(c) { stepEl.classList.remove(c); });
+                    stepEl.classList.add(stepClasses[run.status] || stepClasses.pending);
+
+                    /* Update step number style */
+                    var numEl = stepEl.querySelector('.pipeline-step-number');
+                    /* number styling comes from parent class, already handled */
+
+                    /* Update badge */
+                    var badgeEl = stepEl.querySelector('.step-badge');
+                    if (badgeEl) {
+                        Object.values(statusClasses).forEach(function(c) { badgeEl.classList.remove(c); });
+                        badgeEl.classList.add(statusClasses[run.status] || statusClasses.pending);
+                        badgeEl.textContent = run.status_display;
+                    }
+
+                    /* Update body content */
+                    var bodyEl = stepEl.querySelector('.step-body-content');
+                    if (bodyEl && (run.status === 'completed' || run.status === 'failed' || run.status === 'running')) {
+                        bodyEl.innerHTML = renderStepBody(run);
+                    }
+                });
+
+                /* Update header */
+                var titleEl = document.getElementById('pipeline-title');
+                var headerBadge = document.getElementById('pipeline-badge');
+
+                if (data.all_complete) {
+                    if (titleEl) titleEl.textContent = 'Pipeline Complete';
+                    if (headerBadge) {
+                        headerBadge.className = 'badge badge-' + data.group_status;
+                        headerBadge.textContent = data.group_status_display;
+                    }
+
+                    /* Hide polling indicator */
+                    var ind = document.getElementById('polling-indicator');
+                    if (ind) ind.style.display = 'none';
+
+                    /* Show summary -- reload page once to get server-rendered summary */
+                    clearInterval(timer);
+                    window.location.reload();
+                }
+            })
+            .catch(function(err) {
+                errorCount++;
+                var label = document.getElementById('polling-label');
+                if (label) {
+                    label.textContent = 'Connection issue, retrying... (' + errorCount + '/' + maxErrors + ')';
+                }
+                if (errorCount >= maxErrors) {
+                    clearInterval(timer);
+                    if (label) label.textContent = 'Connection lost. Refresh the page to retry.';
+                    var dot = document.querySelector('#polling-indicator .refresh-dot');
+                    if (dot) dot.style.animation = 'none';
+                }
+            });
+    }
+
+    timer = setInterval(poll, pollInterval);
+})();
+</script>
 {% endblock %}{% endraw %}
