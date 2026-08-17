@@ -245,12 +245,12 @@ def generate_tools_file(
 
     for tool in tools:
         tool_name = tool["name"]
+        raw_name = f"_{tool_name}_raw"
 
         # Check if we have a generated implementation for this tool
         if implementations and tool_name in implementations:
             impl_code = implementations[tool_name]
             lines.append("# GENERATED -- review before production")
-            lines.append("@function_tool")
             # The implementation already contains the full function def
             # with imports prepended. We need to extract imports and the
             # function body separately.
@@ -280,13 +280,22 @@ def generate_tools_file(
                         lines.insert(lines.index("from agents import function_tool") + 1, imp)
 
             if func_lines:
-                lines.extend(func_lines)
+                # Rename the function to raw name for direct calling
+                renamed_lines = []
+                for line in func_lines:
+                    if line.startswith("def "):
+                        line = line.replace(f"def {tool_name}(", f"def {raw_name}(", 1)
+                    renamed_lines.append(line)
+                lines.extend(renamed_lines)
             else:
                 # Fallback: dump the whole implementation after decorator
                 lines.extend(impl_lines)
             lines.extend(["", ""])
+            # Create the decorated version for agent use
+            lines.append(f"{tool_name} = function_tool({raw_name})")
+            lines.extend(["", ""])
         else:
-            # Stub fallback
+            # Stub fallback -- raw function + decorated version
             normalized_params = []
             for param in tool["params"]:
                 if ": " in param:
@@ -298,11 +307,13 @@ def generate_tools_file(
             param_str = ", ".join(normalized_params)
             desc = tool["description"].replace('"', '\\"')
             lines.extend([
-                "@function_tool",
-                f"def {tool_name}({param_str}) -> str:",
+                f"def {raw_name}({param_str}) -> str:",
                 f'    """{desc}"""',
                 f"    # TODO: Implement {tool_name}",
                 f'    return "TODO: {tool_name} is not yet implemented. Edit services/<slug>/tools.py to add the implementation."',
+                "",
+                "",
+                f"{tool_name} = function_tool({raw_name})",
                 "",
                 "",
             ])
@@ -333,26 +344,49 @@ def generate_manager_file(service_spec: dict, pipeline_step: dict) -> str:
 
     # Build agent imports
     agent_imports = []
-    agent_runs = []
     for agent in service_spec["agents"]:
         agent_imports.append(
             f"from .agents.{agent['name']} import {agent['name']}"
         )
+
+    # Build raw tool imports for direct calling
+    tool_imports = []
+    tool_calls = []
+    tools = service_spec.get("tools", [])
+    for tool in tools:
+        raw_name = f"_{tool['name']}_raw"
+        tool_imports.append(
+            f"from .tools import {raw_name}"
+        )
+        tool_calls.append(
+            f'            try:\n'
+            f'                tool_output = {raw_name}(request.get("query", ""))\n'
+            f'                tool_results["{tool["name"]}"] = tool_output\n'
+            f'            except Exception as e:\n'
+            f'                tool_results["{tool["name"]}"] = {{"error": str(e)}}'
+        )
+
+    # Build agent analysis phase
+    agent_runs = []
+    for agent in service_spec["agents"]:
         agent_runs.append(
-            f'            # Build pipeline-aware input\n'
-            f'            input_parts = []\n'
-            f'            if request.get("query"):\n'
-            f'                input_parts.append(f"User request: {{request[\'query\']}}")\n'
+            f'            # Phase 2: Agent analysis\n'
+            f'            analysis_input = (\n'
+            f'                f"Analyze the provided data.\\n\\n"\n'
+            f'                f"User: {{request.get(\'query\', \'\')}}\\n\\n"\n'
+            f'                f"Tool results:\\n{{json.dumps(tool_results, indent=2, default=str)}}\\n\\n"\n'
+            f'                "Use ## headers for sections, - bullets for lists, KEY: VALUE for metrics."\n'
+            f'            )\n'
+            f'            # Include upstream context if available\n'
             f'            for key, val in request.items():\n'
             f'                if key.endswith("_output") and val:\n'
-            f'                    input_parts.append(f"Previous agent output: {{val}}")\n'
+            f'                    analysis_input += f"\\n\\nPrevious output: {{val}}"\n'
             f'            if request.get("previous_result"):\n'
-            f'                input_parts.append(f"Upstream result: {{request[\'previous_result\']}}")\n'
-            f'            input_text = "\\n\\n".join(input_parts) if input_parts else str(request)\n'
+            f'                analysis_input += f"\\n\\nUpstream result: {{request[\'previous_result\']}}"\n'
             f'\n'
             f'            agent_result = await Runner.run(\n'
             f'                {agent["name"]},\n'
-            f'                input=input_text,\n'
+            f'                input=analysis_input,\n'
             f'            )\n'
             f'            # Serialize Pydantic output for JSON compatibility\n'
             f'            output = agent_result.final_output\n'
@@ -363,6 +397,8 @@ def generate_manager_file(service_spec: dict, pipeline_step: dict) -> str:
         )
 
     agent_imports_str = "\n".join(agent_imports)
+    tool_imports_str = "\n".join(tool_imports)
+    tool_calls_str = "\n\n".join(tool_calls) if tool_calls else ""
     agent_runs_str = "\n\n".join(agent_runs)
 
     return f'''"""{service_spec["name"]} -- service manager (OpenAI Agents SDK).
@@ -373,6 +409,7 @@ See GOVERNANCE.md rules 4 (manager orchestration) and 5 (exit reports).
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -380,6 +417,7 @@ from typing import Any
 from agents import Runner
 
 {agent_imports_str}
+{tool_imports_str}
 
 
 class {service_class}Manager:
@@ -401,7 +439,11 @@ class {service_class}Manager:
         self._usage["total_cost"] += cost
 
     async def run(self, request: dict[str, Any]) -> dict[str, Any]:
-        """Run the service pipeline."""
+        """Run the service pipeline.
+
+        Phase 1: Call tools directly for structured data.
+        Phase 2: Pass tool results + user query to agent for analysis.
+        """
         if not os.environ.get("OPENAI_API_KEY"):
             raise EnvironmentError(
                 "OPENAI_API_KEY not set. Add your key to .env"
@@ -410,14 +452,31 @@ class {service_class}Manager:
         what_worked: list[str] = []
         what_failed: list[str] = []
         result: dict[str, Any] = {{}}
+        tool_results: dict[str, Any] = {{}}
 
         try:
             inheritance = self._read_inheritance()
             if inheritance:
                 what_worked.append(f"Read {{len(inheritance)}} prior exit reports")
 
+            # Phase 1: Direct tool calls
+{tool_calls_str}
+            if tool_results:
+                what_worked.append(f"Fetched data from {{len(tool_results)}} tools")
+
 {agent_runs_str}
 
+            # Parse structured output from agent
+            agent_output = None
+            for key, val in result.items():
+                if key.endswith("_output") and val:
+                    agent_output = val if isinstance(val, str) else json.dumps(val, default=str)
+                    break
+
+            parsed = self._parse_agent_output(agent_output or "")
+            result["tool_results"] = tool_results
+            result["sections"] = parsed["sections"]
+            result["metrics"] = parsed["metrics"]
             result["status"] = "completed"
             what_worked.append("Pipeline completed")
 
@@ -428,6 +487,97 @@ class {service_class}Manager:
 
         self._write_exit_report(result, start_time, what_worked, what_failed)
         return result
+
+    def _parse_agent_output(self, text: str) -> dict[str, Any]:
+        """Parse agent text output into structured sections and metrics.
+
+        Detects:
+        - ## Header -> new section break
+        - - bullet -> list section items
+        - KEY: VALUE (with digits) -> metric items
+        - Plain text -> text section content
+        """
+        sections: list[dict[str, Any]] = []
+        metrics: list[dict[str, Any]] = []
+        current_section: dict[str, Any] | None = None
+        current_items: list[str] = []
+        current_text: list[str] = []
+
+        def flush_section():
+            nonlocal current_section, current_items, current_text
+            if current_section is None:
+                return
+            if current_items:
+                current_section["type"] = "list"
+                current_section["items"] = current_items
+            elif current_text:
+                current_section["type"] = "text"
+                current_section["content"] = "\\n".join(current_text)
+            if current_section.get("type"):
+                sections.append(current_section)
+            current_section = None
+            current_items = []
+            current_text = []
+
+        for line in text.split("\\n"):
+            stripped = line.strip()
+            if not stripped:
+                continue
+
+            # ## Header -> new section
+            if stripped.startswith("## "):
+                flush_section()
+                current_section = {{"title": stripped[3:].strip()}}
+                continue
+
+            # KEY: VALUE with numeric content -> metric
+            metric_match = re.match(
+                r"^([A-Za-z][A-Za-z0-9 _-]{{0,40}}):\\s*(.+)$", stripped
+            )
+            if metric_match:
+                key, val = metric_match.group(1).strip(), metric_match.group(2).strip()
+                if re.search(r"\\d", val):
+                    trend = "neutral"
+                    change = ""
+                    if "+" in val or "up" in val.lower():
+                        trend = "up"
+                    elif "-" in val and re.search(r"-[\\d.]", val):
+                        trend = "down"
+                    # Extract percentage change if present
+                    pct_match = re.search(r"([+-]?\\d+\\.?\\d*%)", val)
+                    if pct_match:
+                        change = pct_match.group(1)
+                    metrics.append({{
+                        "label": key,
+                        "value": val,
+                        "trend": trend,
+                        "change": change,
+                    }})
+                    continue
+
+            # - bullet -> list item
+            if stripped.startswith("- ") or stripped.startswith("* "):
+                if current_section is None:
+                    current_section = {{"title": "Details"}}
+                current_items.append(stripped[2:])
+                continue
+
+            # Plain text
+            if current_section is None:
+                current_section = {{"title": "Overview"}}
+            current_text.append(stripped)
+
+        flush_section()
+
+        # If metrics were found, prepend a metrics section
+        if metrics:
+            sections.insert(0, {{
+                "title": "Key Metrics",
+                "type": "metrics",
+                "data": metrics,
+            }})
+
+        return {{"sections": sections, "metrics": metrics}}
 
     def _read_inheritance(self) -> list[dict]:
         """Read prior exit reports. Governance rule 7."""
@@ -452,6 +602,9 @@ class {service_class}Manager:
             "what_worked": what_worked,
             "what_failed": what_failed,
             "recommendations": [],
+            "tool_results": result.get("tool_results", {{}}),
+            "sections": result.get("sections", []),
+            "metrics": result.get("metrics", []),
             "usage": self._usage,
         }}
         filename = f"{{self.service_name}}-{{now.strftime(\'%Y%m%dT%H%M%S\')}}.json"

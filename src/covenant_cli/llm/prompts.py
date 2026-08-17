@@ -15,6 +15,9 @@ RULES:
 8. Field types must be valid Python type annotations: str, int, float, bool, list[str], list[int], dict[str, str], etc.
 9. If the request is vague, infer reasonable services. Do not ask for clarification.
 10. project_name must be lowercase-hyphenated (e.g., "research-assistant").
+11. Agent instructions must say "Analyze the provided data", never "Fetch" or "Look up" -- tools provide the data, agents analyze it.
+12. Output field names map to display types: `summary` -> text card, `recommendations` -> list card, `metrics` -> metrics grid.
+13. Tools must return json.dumps({...}) with structured data, not prose strings. Include a `fetched_at` timestamp in data tool returns.
 
 OUTPUT SCHEMA:
 {
@@ -182,6 +185,9 @@ RULES:
 8. Use type hints on all parameters and return values.
 9. Include a docstring for each function.
 10. Separate each tool with a comment: # --- TOOL: <tool_name> ---
+11. Return JSON strings via json.dumps() -- not prose. Structure: {"key": value, "fetched_at": "ISO timestamp"}.
+12. Always include a `fetched_at` field with the current ISO timestamp in data tool returns.
+13. List data must return JSON arrays via json.dumps(). Never return comma-separated prose.
 
 EXAMPLE INPUT:
 Tools:

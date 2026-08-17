@@ -42,6 +42,62 @@
 <div class="section">
     <h2>Exit Report</h2>
 
+    {# ---- Structured metrics grid ---- #}
+    {% if run.exit_report.metrics %}
+    <div class="metrics-grid fade-in stagger-children" style="margin-bottom: 1.5rem;">
+        {% for m in run.exit_report.metrics %}
+        <div class="metric-tile">
+            <span class="metric-label">{{ m.label }}</span>
+            <span class="metric-value">{{ m.value }}</span>
+            {% if m.change %}
+            <span class="metric-trend metric-trend--{{ m.trend }}">
+                <span class="trend-arrow">{% if m.trend == 'up' %}&#8593;{% elif m.trend == 'down' %}&#8595;{% else %}&#8596;{% endif %}</span>
+                {{ m.change }}
+            </span>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {# ---- Structured data cards ---- #}
+    {% if run.exit_report.sections %}
+    <div class="fade-in stagger-children" style="margin-bottom: 1.5rem;">
+        {% for section in run.exit_report.sections %}
+        <div class="data-card">
+            <div class="data-card-header"><h3>{{ section.title }}</h3></div>
+            <div class="data-card-body">
+                {% if section.type == "metrics" and section.data %}
+                <div class="metrics-grid">
+                    {% for m in section.data %}
+                    <div class="metric-tile">
+                        <span class="metric-label">{{ m.label }}</span>
+                        <span class="metric-value">{{ m.value }}</span>
+                        {% if m.change %}
+                        <span class="metric-trend metric-trend--{{ m.trend }}">
+                            <span class="trend-arrow">{% if m.trend == 'up' %}&#8593;{% elif m.trend == 'down' %}&#8595;{% else %}&#8596;{% endif %}</span>
+                            {{ m.change }}
+                        </span>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% elif section.type == "list" and section.items %}
+                <ul>{% for item in section.items %}<li>{{ item }}</li>{% endfor %}</ul>
+                {% elif section.type == "text" and section.content %}
+                <p>{{ section.content|linebreaksbr }}</p>
+                {% elif section.type == "data" and section.data %}
+                <pre class="code-block code-block--compact">{{ section.data|pprint }}</pre>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {# ---- Fallback: legacy text-based rendering ---- #}
+    {% if not run.exit_report.sections and not run.exit_report.metrics %}
+
     {% if run.exit_report.what_worked %}
     <div class="report-section report-success">
         <h3>What Worked</h3>
@@ -108,6 +164,8 @@
         </div>
     </details>
     {% endif %}
+
+    {% endif %}{# end fallback #}
 
     {% if run.exit_report.error %}
     <div class="report-section report-failure">

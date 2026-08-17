@@ -54,6 +54,62 @@
                 </div>
                 {% endif %}
 
+                {# ---- Structured metrics grid ---- #}
+                {% if run.exit_report.metrics %}
+                <div class="metrics-grid fade-in stagger-children">
+                    {% for m in run.exit_report.metrics %}
+                    <div class="metric-tile">
+                        <span class="metric-label">{{ m.label }}</span>
+                        <span class="metric-value">{{ m.value }}</span>
+                        {% if m.change %}
+                        <span class="metric-trend metric-trend--{{ m.trend }}">
+                            <span class="trend-arrow">{% if m.trend == 'up' %}&#8593;{% elif m.trend == 'down' %}&#8595;{% else %}&#8596;{% endif %}</span>
+                            {{ m.change }}
+                        </span>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {# ---- Structured data cards ---- #}
+                {% if run.exit_report.sections %}
+                <div class="fade-in stagger-children">
+                    {% for section in run.exit_report.sections %}
+                    <div class="data-card">
+                        <div class="data-card-header"><h3>{{ section.title }}</h3></div>
+                        <div class="data-card-body">
+                            {% if section.type == "metrics" and section.data %}
+                            <div class="metrics-grid">
+                                {% for m in section.data %}
+                                <div class="metric-tile">
+                                    <span class="metric-label">{{ m.label }}</span>
+                                    <span class="metric-value">{{ m.value }}</span>
+                                    {% if m.change %}
+                                    <span class="metric-trend metric-trend--{{ m.trend }}">
+                                        <span class="trend-arrow">{% if m.trend == 'up' %}&#8593;{% elif m.trend == 'down' %}&#8595;{% else %}&#8596;{% endif %}</span>
+                                        {{ m.change }}
+                                    </span>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% elif section.type == "list" and section.items %}
+                            <ul>{% for item in section.items %}<li>{{ item }}</li>{% endfor %}</ul>
+                            {% elif section.type == "text" and section.content %}
+                            <p>{{ section.content|linebreaksbr }}</p>
+                            {% elif section.type == "data" and section.data %}
+                            <pre class="code-block code-block--compact">{{ section.data|pprint }}</pre>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {# ---- Fallback: legacy text-based rendering ---- #}
+                {% if not run.exit_report.sections and not run.exit_report.metrics %}
+
                 {% if run.exit_report.what_worked %}
                 <div class="step-findings step-findings--success">
                     <h4>What Worked</h4>
@@ -100,6 +156,8 @@
                     <ul>{% for item in run.exit_report.key_findings %}<li>{{ item }}</li>{% endfor %}</ul>
                 </details>
                 {% endif %}
+
+                {% endif %}{# end fallback #}
 
                 <a href="{% url 'dashboard:run_detail' run.service.slug run.id %}" class="btn btn-secondary btn-sm">
                     Full Report
@@ -234,6 +292,38 @@
         return '<p>' + escapeHtml(String(items)) + '</p>';
     }
 
+    function renderMetricTile(m) {
+        var trendArrow = m.trend === 'up' ? '&#8593;' : (m.trend === 'down' ? '&#8595;' : '&#8596;');
+        var trendHtml = m.change
+            ? '<span class="metric-trend metric-trend--' + escapeHtml(m.trend || 'neutral') + '">' +
+              '<span class="trend-arrow">' + trendArrow + '</span> ' + escapeHtml(String(m.change)) + '</span>'
+            : '';
+        return '<div class="metric-tile">' +
+            '<span class="metric-label">' + escapeHtml(String(m.label)) + '</span>' +
+            '<span class="metric-value">' + escapeHtml(String(m.value)) + '</span>' +
+            trendHtml + '</div>';
+    }
+
+    function renderSection(section) {
+        var bodyHtml = '';
+        if (section.type === 'metrics' && section.data) {
+            bodyHtml = '<div class="metrics-grid">' +
+                section.data.map(renderMetricTile).join('') + '</div>';
+        } else if (section.type === 'list' && section.items) {
+            bodyHtml = '<ul>' + section.items.map(function(i) {
+                return '<li>' + escapeHtml(String(i)) + '</li>';
+            }).join('') + '</ul>';
+        } else if (section.type === 'text' && section.content) {
+            bodyHtml = '<p>' + escapeHtml(String(section.content)).replace(/\n/g, '<br>') + '</p>';
+        } else if (section.type === 'data' && section.data) {
+            bodyHtml = '<pre class="code-block code-block--compact">' +
+                escapeHtml(JSON.stringify(section.data, null, 2)) + '</pre>';
+        }
+        return '<div class="data-card"><div class="data-card-header"><h3>' +
+            escapeHtml(String(section.title)) + '</h3></div>' +
+            '<div class="data-card-body">' + bodyHtml + '</div></div>';
+    }
+
     function renderStepBody(run) {
         var html = '';
         if (run.status === 'pending') return '';
@@ -255,29 +345,47 @@
                 html += '</div>';
             }
             var er = run.exit_report || {};
-            if (er.what_worked) {
-                html += '<div class="step-findings step-findings--success"><h4>What Worked</h4>' +
-                    renderList(er.what_worked) + '</div>';
+
+            /* Structured rendering path */
+            var hasStructured = (er.metrics && er.metrics.length) || (er.sections && er.sections.length);
+
+            if (er.metrics && er.metrics.length) {
+                html += '<div class="metrics-grid fade-in stagger-children">' +
+                    er.metrics.map(renderMetricTile).join('') + '</div>';
             }
-            if (er.what_failed) {
-                html += '<div class="step-findings step-findings--failure"><h4>What Failed</h4>' +
-                    renderList(er.what_failed) + '</div>';
+
+            if (er.sections && er.sections.length) {
+                html += '<div class="fade-in stagger-children">' +
+                    er.sections.map(renderSection).join('') + '</div>';
             }
-            if (er.recommendations) {
-                html += '<div class="step-findings step-findings--recommendations"><h4>Recommendations</h4>' +
-                    renderList(er.recommendations) + '</div>';
+
+            /* Fallback: legacy text rendering */
+            if (!hasStructured) {
+                if (er.what_worked) {
+                    html += '<div class="step-findings step-findings--success"><h4>What Worked</h4>' +
+                        renderList(er.what_worked) + '</div>';
+                }
+                if (er.what_failed) {
+                    html += '<div class="step-findings step-findings--failure"><h4>What Failed</h4>' +
+                        renderList(er.what_failed) + '</div>';
+                }
+                if (er.recommendations) {
+                    html += '<div class="step-findings step-findings--recommendations"><h4>Recommendations</h4>' +
+                        renderList(er.recommendations) + '</div>';
+                }
+                if (er.output) {
+                    var truncated = String(er.output).length > 500
+                        ? String(er.output).substring(0, 500) + '...'
+                        : String(er.output);
+                    html += '<details class="step-output-details"><summary>Output</summary>' +
+                        '<pre class="code-block code-block--compact">' + escapeHtml(truncated) + '</pre></details>';
+                }
+                if (er.key_findings && Array.isArray(er.key_findings) && er.key_findings.length) {
+                    html += '<details class="step-output-details"><summary>Key Findings (' +
+                        er.key_findings.length + ')</summary>' + renderList(er.key_findings) + '</details>';
+                }
             }
-            if (er.output) {
-                var truncated = String(er.output).length > 500
-                    ? String(er.output).substring(0, 500) + '...'
-                    : String(er.output);
-                html += '<details class="step-output-details"><summary>Output</summary>' +
-                    '<pre class="code-block code-block--compact">' + escapeHtml(truncated) + '</pre></details>';
-            }
-            if (er.key_findings && Array.isArray(er.key_findings) && er.key_findings.length) {
-                html += '<details class="step-output-details"><summary>Key Findings (' +
-                    er.key_findings.length + ')</summary>' + renderList(er.key_findings) + '</details>';
-            }
+
             html += '<a href="/service/' + encodeURIComponent(run.service_slug) +
                 '/run/' + run.id + '/" class="btn btn-secondary btn-sm">Full Report</a>';
         }
