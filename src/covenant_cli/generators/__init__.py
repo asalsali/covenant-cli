@@ -181,7 +181,7 @@ def generate_agent_file(agent_spec: dict, service_spec: dict) -> str:
         "  - Rule 6: Distill, don't dump (instructions are focused)",
         '"""',
         "",
-        "from agents import Agent",
+        "from agents import Agent, AgentOutputSchema",
         f"from ..schemas.types import {agent_class}Input, {agent_class}Output",
     ]
 
@@ -198,7 +198,7 @@ def generate_agent_file(agent_spec: dict, service_spec: dict) -> str:
         f'    name="{slug}_{agent_spec["name"]}",',
         f"    instructions=INSTRUCTIONS,",
         f'    model="gpt-4o-mini",',
-        f"    output_type={agent_class}Output,",
+        f"    output_type=AgentOutputSchema({agent_class}Output, strict_json_schema=False),",
     ])
 
     if tool_list:
@@ -351,7 +351,11 @@ def generate_manager_file(service_spec: dict, pipeline_step: dict) -> str:
             f'                {agent["name"]},\n'
             f'                input=input_text,\n'
             f'            )\n'
-            f'            result["{agent["name"]}_output"] = agent_result.final_output\n'
+            f'            # Serialize Pydantic output for JSON compatibility\n'
+            f'            output = agent_result.final_output\n'
+            f'            if hasattr(output, "model_dump"):\n'
+            f'                output = output.model_dump()\n'
+            f'            result["{agent["name"]}_output"] = output\n'
             f'            what_worked.append("{agent["name"]} completed")'
         )
 

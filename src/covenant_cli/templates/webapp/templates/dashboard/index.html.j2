@@ -5,12 +5,12 @@
 {% block content %}
 
 {% if needs_migrate %}
-<div class="card" style="border-color: var(--gold); margin-bottom: 2rem; padding: 2rem;">
-    <h2 style="color: var(--gold); margin-bottom: 0.5rem;">Database Setup Required</h2>
-    <p>Run these commands to set up the database:</p>
-    <pre style="background: var(--ink); color: var(--paper); padding: 1rem; border-radius: 4px; margin-top: 1rem;"><code>python manage.py migrate
+<div class="card" style="border-color: var(--amber); margin-bottom: 2rem; padding: 2rem;">
+    <h2 style="color: var(--amber); margin-bottom: 0.5rem;">Database Setup Required</h2>
+    <p style="color: var(--text-secondary);">Run these commands to set up the database:</p>
+    <pre class="code-block" style="margin-top: 1rem;"><code>python manage.py migrate
 python manage.py createsuperuser</code></pre>
-    <p style="margin-top: 1rem; color: var(--ink-light);">Then refresh this page.</p>
+    <p style="margin-top: 1rem; color: var(--text-tertiary);">Then refresh this page.</p>
 </div>
 {% endif %}
 
@@ -36,7 +36,7 @@ python manage.py createsuperuser</code></pre>
     {% else %}
     <div class="hero-empty">
         <p>No services registered yet. Add a service to get started.</p>
-        <p class="hint">Use <code>covenant add-service &lt;name&gt;</code> to create one, then register it in Django admin.</p>
+        <p class="hint" style="margin-top: 0.5rem; color: var(--text-tertiary); font-size: 0.85rem;">Use <code>covenant add-service &lt;name&gt;</code> to create one, then register it in Django admin.</p>
     </div>
     {% endif %}
 </div>
@@ -45,6 +45,7 @@ python manage.py createsuperuser</code></pre>
 {% if recent_pipelines %}
 <div class="section">
     <h2>Recent Pipelines</h2>
+    <div class="table-wrap">
     <table class="table">
         <thead>
             <tr>
@@ -69,6 +70,7 @@ python manage.py createsuperuser</code></pre>
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </div>
 {% endif %}
 
@@ -85,7 +87,10 @@ python manage.py createsuperuser</code></pre>
             <h2 class="card-title">
                 <a href="{% url 'dashboard:service_detail' service.slug %}">{{ service.name }}</a>
             </h2>
-            <span class="badge badge-{{ service.status }}">{{ service.get_status_display }}</span>
+            <span class="badge badge-{{ service.status }}">
+                <span class="status-dot status-dot--{{ service.status }}"></span>
+                {{ service.get_status_display }}
+            </span>
         </div>
         <div class="card-body">
             <div class="stat-row">
@@ -123,9 +128,9 @@ python manage.py createsuperuser</code></pre>
             <form method="post" action="{% url 'dashboard:trigger_run' service.slug %}" class="trigger-form">
                 {% csrf_token %}
                 <input type="text" name="user_input" placeholder="Enter request..." class="input-inline">
-                <button type="submit" class="btn btn-primary">Run</button>
+                <button type="submit" class="btn btn-primary btn-sm">Run</button>
             </form>
-            <a href="{% url 'dashboard:service_detail' service.slug %}" class="btn btn-secondary">Details</a>
+            <a href="{% url 'dashboard:service_detail' service.slug %}" class="btn btn-secondary btn-sm">Details</a>
         </div>
     </div>
     {% empty %}
@@ -139,6 +144,7 @@ python manage.py createsuperuser</code></pre>
 {% if recent_runs %}
 <div class="section">
     <h2>Recent Runs</h2>
+    <div class="table-wrap">
     <table class="table">
         <thead>
             <tr>
@@ -171,6 +177,7 @@ python manage.py createsuperuser</code></pre>
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </div>
 {% endif %}
 {% endblock %}{% endraw %}
